@@ -1,6 +1,9 @@
 from math import dist
 
-from inputland.tracking import INDEX_TIP, MIDDLE_MCP, THUMB_TIP, WRIST, Hand
+from inputland.tracking import (
+    INDEX_PIP, INDEX_TIP, MIDDLE_MCP, MIDDLE_PIP, MIDDLE_TIP, PINKY_PIP, PINKY_TIP, RING_PIP, RING_TIP, THUMB_TIP,
+    WRIST, Hand,
+)
 
 
 def is_gesture(hand: Hand, gesture: str, min_score: float) -> bool:
@@ -12,6 +15,24 @@ def is_pinching(hand: Hand, ratio: float) -> bool:
     """Thumb tip on the index tip, closer than `ratio` x the hand size (wrist to middle knuckle)."""
     lm = hand.landmarks
     return dist(lm[THUMB_TIP], lm[INDEX_TIP]) < ratio * dist(lm[WRIST], lm[MIDDLE_MCP])
+
+
+def is_love_sign(hand: Hand) -> bool:
+    """🤟 (or 🤘): index and pinky up, middle and ring folded; the thumb is ignored.
+
+    From the landmarks: MediaPipe's own `ILoveYou` label rarely fires. Never a `Pointing_Up` hand, whose relaxed
+    pinky can read as up: holding it would close the window while moving the cursor.
+    """
+    if hand.gesture == "Pointing_Up":
+        return False
+    lm = hand.landmarks
+
+    def up(tip: int, pip: int) -> bool:  # a folded fingertip curls back nearer the wrist than its middle joint
+        return dist(lm[tip], lm[WRIST]) > dist(lm[pip], lm[WRIST])
+
+    return up(INDEX_TIP, INDEX_PIP) and up(PINKY_TIP, PINKY_PIP) and not (
+        up(MIDDLE_TIP, MIDDLE_PIP) or up(RING_TIP, RING_PIP)
+    )
 
 
 def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float, pinch_ratio: float) -> Hand | None:

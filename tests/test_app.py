@@ -2,7 +2,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
-from hands import hand, pinch, point
+from hands import hand, love, pinch, point
 
 from inputland import app
 from inputland.config import Settings
@@ -39,6 +39,9 @@ def devices(monkeypatch):
 
         def paste(self):
             self.events.append("paste")
+
+        def close_window(self):
+            self.events.append("close")
 
         def scroll(self, notches):
             self.events.append(("scroll", notches))
@@ -133,6 +136,18 @@ def test_thumbs_up_copies_and_held_thumbs_down_pastes_after_pointing(devices):
 
     assert [e for e in devices.events if isinstance(e, str)] == ["copy", "paste"]
     assert [(s.copied, s.pasted) for s in statuses if s.copied or s.pasted] == [("Right", None), (None, "Right")]
+
+
+def test_held_love_closes_once_after_pointing(devices):
+    o, l = point("Right", 0.5, 0.45), love("Right", 0.5, 0.45)
+    # A 🤟 before pointing does nothing; a 2-frame 🤟 is too short; a held one closes once.
+    devices.script = [[l], [l], [l], [o], [l], [l], [o], [l], [l], [l], [l]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, close_frames=3), statuses.append)
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["close"]
+    assert [s.closed for s in statuses if s.closed] == ["Right"]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):

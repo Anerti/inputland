@@ -1,6 +1,11 @@
+import logging
+import os
+import subprocess
 import time
 
 from evdev import AbsInfo, UInput, UInputError, ecodes
+
+log = logging.getLogger(__name__)
 
 ABS_MAX = 32767
 
@@ -21,6 +26,7 @@ class VirtualPointer:
             # interrupt the program running in a terminal.
             ecodes.EV_KEY: [
                 ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.KEY_LEFTCTRL, ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT,
+                ecodes.KEY_LEFTALT, ecodes.KEY_F4,
             ],
             ecodes.EV_REL: [ecodes.REL_WHEEL, ecodes.REL_WHEEL_HI_RES],
         }
@@ -64,6 +70,27 @@ class VirtualPointer:
 
     def paste(self) -> None:
         self._shortcut(ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT)
+
+    def close_window(self) -> None:
+        """Close the focused window: Hyprland's killactive, Alt+F4 elsewhere."""
+        # Hyprland binds no key to closing by default (Omarchy uses Super+W), so ask it directly.
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            self.stop_zoom()
+            # Lua config (Hyprland 0.56+) first, then the classic dispatcher; each answers "ok" only on success.
+            for dispatcher in ("hl.dsp.window.close()", "killactive"):
+                # A missing or stuck hyprctl must not stop or freeze the loop.
+                try:
+                    done = subprocess.run(["hyprctl", "dispatch", dispatcher], capture_output=True, text=True, timeout=2)
+                except (OSError, subprocess.TimeoutExpired) as e:
+                    log.warning("hyprctl could not close the window: %s", e)
+                    return
+                if done.stdout.strip() == "ok":
+                    return
+            log.warning("hyprctl could not close the window: %s", (done.stdout + done.stderr).strip())
+        elif os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"):
+            self._shortcut(ecodes.KEY_LEFTALT, ecodes.KEY_F4)
+        else:  # on the Linux console Alt+F4 switches to tty4
+            log.warning("no window to close outside a graphical session")
 
     def _shortcut(self, modifier: int, key: int) -> None:
         self.stop_zoom()

@@ -1,6 +1,6 @@
 """Scripted hands for the tests."""
 
-from inputland.tracking import INDEX_TIP, MIDDLE_TIP, THUMB_TIP, WRIST, Hand
+from inputland.tracking import INDEX_TIP, MIDDLE_TIP, PINKY_TIP, THUMB_TIP, WRIST, Hand
 
 
 def hand(side, x, y, gesture="Pointing_Up", pinch=None):
@@ -18,6 +18,13 @@ def hand(side, x, y, gesture="Pointing_Up", pinch=None):
 
 def point(side, x, y):
     return hand(side, x, y)
+
+
+def love(side, x, y):
+    """🤟 with the pinky up too; MediaPipe usually misses it."""
+    lm = list(hand(side, x, y, gesture="None").landmarks)
+    lm[PINKY_TIP] = (x - 0.03, y - 0.08)
+    return Hand(side, "None", 0.9, tuple(lm))
 
 
 def pinch(side, x, y, button="left"):

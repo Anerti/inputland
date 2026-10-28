@@ -1,11 +1,11 @@
 from pathlib import Path
 
 import pytest
-from hands import pinch, point
+from hands import hand, love, pinch, point
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_gesture, is_pinching, pick_pointer_hand
+from inputland.gestures import Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand
 from inputland.tracking import Hand
 
 
@@ -67,6 +67,14 @@ def test_is_pinching_scales_with_hand_size():
     assert is_pinching(pinch("Right", 0.5, 0.5), 0.35)
     assert not is_pinching(point("Right", 0.5, 0.5), 0.35)  # thumb resting on the folded fingers
     assert not is_pinching(pinch("Right", 0.5, 0.5, button="right"), 0.35)  # thumb on the middle finger
+
+
+def test_love_sign_needs_index_and_pinky_up_middle_and_ring_folded():
+    assert is_love_sign(love("Right", 0.5, 0.5))
+    assert not is_love_sign(point("Right", 0.5, 0.5))  # pinky folded
+    assert not is_love_sign(hand("Right", 0.5, 0.5, pinch="right"))  # middle finger up
+    # Pointing with a relaxed pinky looks the same from the landmarks; holding it must not close the window.
+    assert not is_love_sign(Hand("Right", "Pointing_Up", 0.9, love("Right", 0.5, 0.5).landmarks))
 
 
 def test_only_the_driver_keeps_control_while_pinching():
@@ -184,6 +192,51 @@ def test_pointer_clicks_and_keys_let_go_of_zoom_ctrl_first(uinput):
         action()
         uinput.release()
         assert uinput.writes[:2] == [(ecodes.KEY_LEFTCTRL, 0), (first, 1)], action.__name__
+
+
+@pytest.mark.parametrize(
+    ("lua", "tried"), [(True, ["hl.dsp.window.close()"]), (False, ["hl.dsp.window.close()", "killactive"])],
+)
+def test_pointer_close_window_on_hyprland_falls_back_to_killactive(uinput, monkeypatch, lua, tried):
+    import subprocess
+
+    from inputland import pointer
+
+    calls = []
+
+    def hyprctl(args, **kw):
+        calls.append(args[-1])
+        ok = args[-1] == "killactive" or lua  # pre-Lua Hyprland rejects the Lua dispatcher
+        return subprocess.CompletedProcess(args, 0, "ok" if ok else "Invalid dispatcher", "")
+
+    monkeypatch.setenv("HYPRLAND_INSTANCE_SIGNATURE", "x")
+    monkeypatch.setattr(pointer.subprocess, "run", hyprctl)
+    uinput.close_window()
+    assert calls == tried and uinput.writes == []  # no Alt+F4 on Hyprland
+
+
+def test_pointer_close_window_survives_missing_hyprctl(uinput, monkeypatch):
+    from inputland import pointer
+
+    def missing(*a, **kw):
+        raise FileNotFoundError("hyprctl")
+
+    monkeypatch.setenv("HYPRLAND_INSTANCE_SIGNATURE", "x")
+    monkeypatch.setattr(pointer.subprocess, "run", missing)
+    uinput.close_window()
+    assert uinput.writes == []
+
+
+@pytest.mark.parametrize(("display", "closes"), [("wayland-1", True), (None, False)])
+def test_pointer_close_window_sends_alt_f4_only_in_a_graphical_session(uinput, monkeypatch, display, closes):
+    from inputland.pointer import ecodes
+
+    for name in ("HYPRLAND_INSTANCE_SIGNATURE", "DISPLAY", "WAYLAND_DISPLAY"):
+        monkeypatch.delenv(name, raising=False)
+    if display:
+        monkeypatch.setenv("WAYLAND_DISPLAY", display)
+    uinput.close_window()
+    assert (uinput.writes[:1] == [(ecodes.KEY_LEFTALT, 1)]) is closes  # on the TTY Alt+F4 would switch to tty4
 
 
 def test_pointer_zoom_does_not_inherit_scroll_leftovers(uinput):

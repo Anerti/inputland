@@ -12,7 +12,7 @@ from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, is_gesture, is_pinching, pick_pointer_hand,
+    Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand,
 )
 from inputland.pointer import VirtualPointer
 from inputland.tracking import INDEX_MCP, OTHER_SIDE, Hand, HandTracker, ensure_model
@@ -36,6 +36,7 @@ class Status:
     pasted: str | None = None  # side holding the 👎 that pasted
     zooming: str | None = None  # side of the last driver while two open palms zoom
     paused: bool = False  # a fist paused control; an open palm resumes it
+    closed: str | None = None  # side holding the 🤟 that closed the window
 
 
 def run(
@@ -58,12 +59,14 @@ def run(
         palms = Debounce(settings.engage_frames, settings.release_frames)
         thumb_up = Debounce(settings.engage_frames, settings.release_frames)
         thumb_down = Debounce(settings.paste_frames, settings.release_frames)
+        love = Debounce(settings.close_frames, settings.release_frames)
         # Per side, so a fist or palm the other hand already holds does not hide this one's.
         fists = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
             "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
+            "hold 🤟 to close the window, "
             "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom; "
             "make a fist to pause, open a palm to resume"
         )
@@ -128,7 +131,7 @@ def run(
                 else:
                     pointer.press()
 
-            # ✌️ / 👍 / 👎 by the last driver fire once each; it no longer points, so the cursor stays where it aimed.
+            # ✌️ / 👍 / 👎 / 🤟 by the last driver fire once each; it no longer points, so the cursor stays where it aimed.
             owner = driver or last_driver
             owned = [h for h in hands if h.side == owner]
             if _started(victory, any(is_gesture(h, "Victory", settings.min_gesture_score) for h in owned)):
@@ -140,6 +143,9 @@ def run(
             if _started(thumb_down, any(is_gesture(h, "Thumb_Down", settings.min_gesture_score) for h in owned)):
                 log.debug("paste")
                 pointer.paste()
+            if _started(love, any(is_love_sign(h) for h in owned)):
+                log.debug("close window")
+                pointer.close_window()
 
             # Two open palms, joystick style: the last driver's hand, above where the palms opened, scrolls up;
             # palms spread apart zoom in. Axis lock: the first to leave its dead zone owns it until the palms close.
@@ -171,7 +177,7 @@ def run(
                 pinch.state, owner if victory.state else None, edge,
                 owner if palms.state and palm_axis != "zoom" else None,
                 owner if thumb_up.state else None, owner if thumb_down.state else None,
-                owner if palms.state and palm_axis == "zoom" else None, paused,
+                owner if palms.state and palm_axis == "zoom" else None, paused, owner if love.state else None,
             )
             if status != last_status:
                 on_status(status)

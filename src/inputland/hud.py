@@ -166,6 +166,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "Copy", "driving"
     if side == status.pasted:
         return "Paste", "driving"
+    if side == status.closed:
+        return "Close", "driving"
     if status.scrolling:  # both hands make the gesture; highlight the one that scrolls
         return "Scrolling", "driving" if side == status.scrolling else "seen"
     if status.zooming:
