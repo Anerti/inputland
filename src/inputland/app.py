@@ -25,6 +25,9 @@ class Status:
 
     driver: str | None  # side of the hand moving the cursor, None when idle
     hands: tuple[tuple[str, str], ...]  # (side, gesture), sorted
+    pressed: bool = False  # the driver holds the left button (pinch: click or drag)
+    right_click: str | None = None  # side holding the ✌️ that right clicked
+    edge: bool = False  # cursor pinned to a screen edge: the hand is outside the region
 
 
 def run(
@@ -42,7 +45,7 @@ def run(
         gate = Debounce(settings.engage_frames, settings.release_frames)
         smooth_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         smooth_y = OneEuroFilter(settings.min_cutoff, settings.beta)
-        pinch = Debounce(settings.engage_frames, settings.release_frames)
+        pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
         victory = Debounce(settings.engage_frames, settings.release_frames)
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
@@ -63,6 +66,7 @@ def run(
             hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
 
             active = gate.update(hand is not None)
+            edge = False
             if not active:
                 driver = None
             elif hand is not None:
@@ -74,6 +78,7 @@ def run(
                     driver = last_driver = hand.side
                 # Base of the index finger: steadier than the fingertip, and it does not move while pinching.
                 u, v = settings.region.normalize(*hand.landmarks[INDEX_MCP])
+                edge = u in (0.0, 1.0) or v in (0.0, 1.0)  # normalize clamps to the edges
                 pointer.move_to(smooth_x(u, now), smooth_y(v, now))
 
             # Only the driver's pinch holds the left button: down on close, up on open, so a quick pinch clicks.
@@ -94,7 +99,10 @@ def run(
                     log.debug("right click")
                     pointer.right_click()
 
-            status = Status(driver, tuple(sorted((h.side, h.gesture) for h in hands)))
+            status = Status(
+                driver, tuple(sorted((h.side, h.gesture) for h in hands)),
+                pinch.state, owner if victory.state else None, edge,
+            )
             if status != last_status:
                 on_status(status)
                 last_status = status

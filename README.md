@@ -4,7 +4,7 @@ Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland),
 
 **Current scope:** point with either index finger (☝️) to move the cursor. Any other pose releases it. If both hands point, the hand already moving the cursor keeps it.
 While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag. Raise your middle finger too (✌️) to right click.
-A HUD in the top-right corner shows the gesture of each hand and highlights the one moving the cursor, in your Omarchy theme colors.
+A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `At edge` when the hand is outside the mapped region) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
 
 ## Setup
 
@@ -42,8 +42,12 @@ uv run inputland --no-hud   # headless, e.g. on X11 or the TTY
 | `--beta` | `10.0` | Higher = less lag on fast moves, more jitter. |
 | `--pinch-ratio` | `0.35` | Thumb-index distance, as a fraction of hand size, that counts as a pinch. Raise if pinches are missed, lower if it clicks on its own. |
 | `--camera N` | `0` | Use `/dev/videoN`. |
+| `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
+Flags are not saved; keep your values in a shell alias, e.g. `alias inputland='uv run --project ~/Projects/inputland inputland --region 0.3 0.25 0.7 0.65'`.
+
+With several monitors the region maps onto the whole screen layout, so the same hand movement covers all of them and each monitor gets less precision.
 
 ## Architecture
 

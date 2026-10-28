@@ -22,6 +22,10 @@ def main() -> None:
         help="thumb-index distance (fraction of hand size) that counts as a pinch",
     )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
+    parser.add_argument(
+        "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
+        help="screen corner of the overlay",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -44,7 +48,7 @@ def main() -> None:
         else:
             from inputland.hud import Hud  # loads GTK; only needed with the HUD
 
-            Hud().run(lambda on_status, stop: run(settings, on_status, stop))
+            Hud(args.hud_corner).run(lambda on_status, stop: run(settings, on_status, stop))
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError, ValueError) as e:

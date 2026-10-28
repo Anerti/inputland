@@ -59,7 +59,7 @@ def test_pinch_holds_the_button_to_drag(devices):
     # Pinch without pointing first, then point, pinch and move, open, pinch again.
     devices.script = [[p], [o], [p], [moved], [o], [p]]
 
-    app.run(Settings(engage_frames=1, release_frames=1))
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1))
 
     # Nothing before the hand pointed; the button stays down while the pinching hand moves the cursor.
     labels = [e if isinstance(e, str) else "move" for e in devices.events]
@@ -71,7 +71,7 @@ def test_hand_leaving_mid_drag_releases_the_button(devices):
     o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
     devices.script = [[o], [p], [], []]
 
-    app.run(Settings(engage_frames=1, release_frames=1))
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1))
 
     assert [e for e in devices.events if isinstance(e, str)] == ["down", "up"]
 
@@ -92,10 +92,33 @@ def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
     # Half-closed pinch drops the driver, the finished pinch still presses; after the hand leaves it must point again.
     devices.script = [[o], [half], [p], [], [o], [], [p]]
 
-    app.run(Settings(engage_frames=1, release_frames=1))
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1))
 
     assert devices.events.count("down") == 1
     assert devices.events.index("down") == 2  # move (pointing), move (pinch re-engaged), down
+
+
+def test_quick_double_pinch_presses_twice(devices):
+    o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
+    # Opening for 2 frames is shorter than release_frames: the pinch has its own, shorter debounce.
+    devices.script = [[o]] * 3 + [[p], [p], [o], [o], [p], [p]]
+
+    app.run(Settings(engage_frames=3, release_frames=5, pinch_frames=2))
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["down", "up", "down"]
+
+
+def test_status_reports_button_right_click_and_edge(devices):
+    o, edge, p = point("Right", 0.5, 0.45), point("Right", 0.9, 0.45), pinch("Right", 0.5, 0.45)
+    v = hand("Right", 0.5, 0.45, gesture="Victory")
+    devices.script = [[o], [edge], [p], [o], [v]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1), statuses.append)
+
+    assert [(s.edge, s.pressed, s.right_click) for s in statuses] == [
+        (False, False, None), (True, False, None), (False, True, None), (False, False, None), (False, False, "Right"),
+    ]
 
 
 def test_settings_reject_filter_values_that_break_smoothing():

@@ -35,6 +35,8 @@ class Settings:
     # Frames a pose must hold before the cursor engages / disengages.
     engage_frames: int = 3
     release_frames: int = 5
+    # Frames a pinch must hold / stay open to press / release: shorter than the above so double clicks fit.
+    pinch_frames: int = 2
     # One Euro filter, in screen units (0..1): lower min_cutoff = less jitter, higher beta = less lag.
     min_cutoff: float = 1.0
     beta: float = 10.0

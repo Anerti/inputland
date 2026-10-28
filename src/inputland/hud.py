@@ -35,18 +35,13 @@ Worker = Callable[[Callable[[Status], None], threading.Event], None]
 
 SIDES = ("Left", "Right")  # segment order matches the mirrored camera view
 
-GESTURES = {
-    "Pointing_Up": "Pointing",
-    "Open_Palm": "Open palm",
-    "Closed_Fist": "Fist",
-    "Thumb_Up": "Thumb up",
-    "Thumb_Down": "Thumb down",
-    "Victory": "Victory",
-    "ILoveYou": "Love you",
-    "None": "Other pose",
-}
+# What each segment can say: the action, not MediaPipe's gesture name.
+STARTING = "Starting"
+IDLE = "Point to start"  # no hand in view
 ABSENT = "Not seen"
-NAME_CHARS = max(len(n) for n in [*GESTURES.values(), ABSENT])  # fixed width: the strip never resizes
+IGNORED = "-"  # a pose that does nothing
+TEXTS = (STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click")
+NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
 
 # Used outside Omarchy, or when the theme file is missing a key.
 DEFAULT_COLORS = {"background": "#121212", "foreground": "#e6e6e6", "active_border_color": "#8aa4ff"}
@@ -57,11 +52,11 @@ CSS = """
   border: 2px solid alpha(@fg, 0.14);
   padding: 2px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 13px;
   color: @fg;
 }
 .segment { padding: 3px 8px; transition: background 150ms ease-out, color 150ms ease-out; }
-.segment.absent { color: alpha(@fg, 0.40); }
+.segment.absent { color: alpha(@fg, 0.60); }
 .segment.driving { background: @active; color: @bg; font-weight: bold; }
 """
 
@@ -83,7 +78,8 @@ def theme_css() -> str:
 
 
 class Hud:
-    def __init__(self) -> None:
+    def __init__(self, corner: str = "top-right") -> None:
+        self._corner = corner
         self._app = Gtk.Application(application_id="dev.inputland.Hud", flags=Gio.ApplicationFlags.NON_UNIQUE)
 
     def run(self, worker: Worker) -> None:
@@ -130,7 +126,7 @@ class Hud:
         LayerShell.init_for_window(window)
         LayerShell.set_namespace(window, "inputland")
         LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
-        for edge in (LayerShell.Edge.TOP, LayerShell.Edge.RIGHT):
+        for edge in (getattr(LayerShell.Edge, e.upper()) for e in self._corner.split("-")):
             LayerShell.set_anchor(window, edge, True)
             LayerShell.set_margin(window, edge, 12)
         # Empty input region: clicks pass through to the windows below.
@@ -142,16 +138,28 @@ class Hud:
             label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3)
             hud.append(label)
             self._segments[side] = label
-        self._render(Status(None, ()))
+        self._render(None)  # until the first frame: model download, camera and GPU start-up
         window.set_child(hud)
         window.present()
         if not LayerShell.is_supported():
             log.warning("compositor has no layer-shell support; the HUD is a normal window")
 
-    def _render(self, status: Status) -> None:
-        seen = dict(status.hands)
+    def _render(self, status: Status | None) -> None:
         for side, label in self._segments.items():
-            gesture = seen.get(side)
-            label.set_label(f"{side[0]}  {GESTURES.get(gesture, gesture) if gesture else ABSENT}")
-            state = "driving" if side == status.driver else "seen" if gesture else "absent"
+            text, state = describe(side, status)
+            label.set_label(f"{side[0]}  {text}")
             label.set_css_classes(["segment", state])
+
+
+def describe(side: str, status: Status | None) -> tuple[str, str]:
+    """What the segment of `side` says, and its CSS state."""
+    if status is None:
+        return STARTING, "absent"
+    if side == status.right_click:
+        return "Right click", "driving"
+    if side == status.driver:
+        return "Pinch" if status.pressed else "At edge" if status.edge else "Moving", "driving"
+    gesture = dict(status.hands).get(side)
+    if gesture is None:
+        return ABSENT if status.hands else IDLE, "absent"
+    return ("Pointing", "seen") if gesture == "Pointing_Up" else (IGNORED, "absent")
