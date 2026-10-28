@@ -3,7 +3,7 @@
 Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland), X11 and the TTY.
 
 **Current scope:** point with either index finger (☝️) to move the cursor. Any other pose releases it. If both hands point, the hand already moving the cursor keeps it.
-While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click.
+While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag.
 A HUD in the top-right corner shows the gesture of each hand and highlights the one moving the cursor, in your Omarchy theme colors.
 
 ## Setup

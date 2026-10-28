@@ -23,6 +23,7 @@ class VirtualPointer:
             self._device = UInput(capabilities, name=name)
         except PermissionError as e:
             raise RuntimeError("no write access to /dev/uinput; see README 'Permissions'") from e
+        self._pressed_at: float | None = None
 
     def move_to(self, u: float, v: float) -> None:
         """Move to screen position (u, v), each 0..1."""
@@ -30,14 +31,24 @@ class VirtualPointer:
         self._device.write(ecodes.EV_ABS, ecodes.ABS_Y, round(v * ABS_MAX))
         self._device.syn()
 
-    def click(self) -> None:
-        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1)
-        self._device.syn()
-        time.sleep(0.03)  # libinput's button debouncing can drop a release closer than ~25 ms to the press
-        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)
+    def press(self) -> None:
+        self._button(1)
+        self._pressed_at = time.monotonic()
+
+    def release(self) -> None:
+        if self._pressed_at is None:
+            return
+        # libinput's button debouncing can drop a release closer than ~25 ms to the press
+        time.sleep(max(0.0, self._pressed_at + 0.03 - time.monotonic()))
+        self._button(0)
+        self._pressed_at = None
+
+    def _button(self, value: int) -> None:
+        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, value)
         self._device.syn()
 
     def close(self) -> None:
+        self.release()  # never leave the button stuck down
         self._device.close()
 
     def __enter__(self) -> "VirtualPointer":

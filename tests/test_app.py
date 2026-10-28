@@ -25,8 +25,11 @@ def devices(monkeypatch):
         def move_to(self, u, v):
             self.events.append((u, v))
 
-        def click(self):
-            self.events.append("click")
+        def press(self):
+            self.events.append("down")
+
+        def release(self):
+            self.events.append("up")
 
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
@@ -48,28 +51,37 @@ def test_run_engages_switches_hands_and_releases(devices):
     assert [c for m in devices.events for c in m] == pytest.approx([0.5, 0.5] * 3 + [1.0, 1.0])
 
 
-def test_pinch_clicks_once_per_pinch(devices):
-    p, o = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45)
-    # Pinch without pointing first, then point, hold a pinch, open, pinch again.
-    devices.script = [[p], [o], [p], [p], [p], [o], [p]]
+def test_pinch_holds_the_button_to_drag(devices):
+    p, o, moved = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45), pinch("Right", 0.75, 0.7)
+    # Pinch without pointing first, then point, pinch and move, open, pinch again.
+    devices.script = [[p], [o], [p], [moved], [o], [p]]
 
     app.run(Settings(engage_frames=1, release_frames=1))
 
-    # The pinching hand keeps moving the cursor; one click per pinch, none before the hand pointed.
-    moves = [e for e in devices.events if e != "click"]
-    assert len(moves) == 6
-    assert [i for i, e in enumerate(devices.events) if e == "click"] == [2, 7]
+    # Nothing before the hand pointed; the button stays down while the pinching hand moves the cursor.
+    labels = [e if isinstance(e, str) else "move" for e in devices.events]
+    assert labels == ["move", "move", "down", "move", "move", "up", "move", "down"]
+    assert devices.events[3] != devices.events[1]
+
+
+def test_hand_leaving_mid_drag_releases_the_button(devices):
+    o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
+    devices.script = [[o], [p], [], []]
+
+    app.run(Settings(engage_frames=1, release_frames=1))
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["down", "up"]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
     p, o, half = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="None")
-    # Half-closed pinch drops the driver, the finished pinch still clicks; after the hand leaves it must point again.
+    # Half-closed pinch drops the driver, the finished pinch still presses; after the hand leaves it must point again.
     devices.script = [[o], [half], [p], [], [o], [], [p]]
 
     app.run(Settings(engage_frames=1, release_frames=1))
 
-    assert devices.events.count("click") == 1
-    assert devices.events.index("click") == 2  # move (pointing), move (pinch re-engaged), click
+    assert devices.events.count("down") == 1
+    assert devices.events.index("down") == 2  # move (pointing), move (pinch re-engaged), down
 
 
 def test_settings_reject_filter_values_that_break_smoothing():
