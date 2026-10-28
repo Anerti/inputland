@@ -1,13 +1,26 @@
-from inputland.tracking import Hand
+from math import dist
+
+from inputland.tracking import INDEX_TIP, MIDDLE_MCP, THUMB_TIP, WRIST, Hand
 
 
 def is_pointing(hand: Hand, min_score: float) -> bool:
     return hand.gesture == "Pointing_Up" and hand.score >= min_score
 
 
-def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float) -> Hand | None:
-    """The pointing hand that moves the cursor. If both point, the current `driver` side keeps control."""
-    pointing = [h for h in hands if is_pointing(h, min_score)]
+def is_pinching(hand: Hand, ratio: float) -> bool:
+    """Thumb tip on the index tip, closer than `ratio` x the hand size (wrist to middle knuckle)."""
+    lm = hand.landmarks
+    return dist(lm[THUMB_TIP], lm[INDEX_TIP]) < ratio * dist(lm[WRIST], lm[MIDDLE_MCP])
+
+
+def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float, pinch_ratio: float) -> Hand | None:
+    """The pointing hand that moves the cursor. If both point, the current `driver` side keeps control.
+
+    A pinching driver keeps control too: MediaPipe stops calling it `Pointing_Up`.
+    """
+    pointing = [
+        h for h in hands if is_pointing(h, min_score) or (h.side == driver and is_pinching(h, pinch_ratio))
+    ]
     return next((h for h in pointing if h.side == driver), pointing[0] if pointing else None)
 
 

@@ -17,6 +17,10 @@ def main() -> None:
     )
     parser.add_argument("--min-cutoff", type=float, default=defaults.min_cutoff, help="lower = less jitter, more lag")
     parser.add_argument("--beta", type=float, default=defaults.beta, help="higher = less lag on fast moves")
+    parser.add_argument(
+        "--pinch-ratio", type=float, default=defaults.pinch_ratio,
+        help="thumb-index distance (fraction of hand size) that counts as a pinch",
+    )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -31,6 +35,7 @@ def main() -> None:
             region=Region(*args.region) if args.region else defaults.region,
             min_cutoff=args.min_cutoff,
             beta=args.beta,
+            pinch_ratio=args.pinch_ratio,
             preview=args.preview,
         )
         # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.

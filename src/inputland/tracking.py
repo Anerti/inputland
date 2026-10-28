@@ -22,7 +22,13 @@ MODEL_URL = (
     "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"  # pinned: "latest" could change gestures under us
 )
 
-INDEX_MCP = 5  # MediaPipe landmark: base of the index finger
+# MediaPipe hand landmarks
+WRIST = 0
+THUMB_TIP = 4
+INDEX_MCP = 5  # base of the index finger
+INDEX_TIP = 8
+MIDDLE_MCP = 9
+MIDDLE_TIP = 12
 OTHER_SIDE = {"Left": "Right", "Right": "Left"}
 
 

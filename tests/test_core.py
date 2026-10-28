@@ -1,8 +1,9 @@
 import pytest
+from hands import pinch, point
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_pointing, pick_pointer_hand
+from inputland.gestures import Debounce, is_pinching, is_pointing, pick_pointer_hand
 from inputland.tracking import Hand
 
 
@@ -54,7 +55,20 @@ def test_pick_pointer_hand_accepts_either_hand_and_keeps_the_driver():
     lm = ((0.0, 0.0),) * 21
     left, right = Hand("Left", "Pointing_Up", 0.9, lm), Hand("Right", "Pointing_Up", 0.9, lm)
     palm = Hand("Right", "Open_Palm", 0.9, lm)
-    assert pick_pointer_hand([left, palm], None, 0.5) is left
-    assert pick_pointer_hand([right, left], "Left", 0.5) is left  # both point: driver keeps control
-    assert pick_pointer_hand([right, left], None, 0.5) is right
-    assert pick_pointer_hand([palm], "Right", 0.5) is None
+    assert pick_pointer_hand([left, palm], None, 0.5, 0.35) is left
+    assert pick_pointer_hand([right, left], "Left", 0.5, 0.35) is left  # both point: driver keeps control
+    assert pick_pointer_hand([right, left], None, 0.5, 0.35) is right
+    assert pick_pointer_hand([palm], "Right", 0.5, 0.35) is None
+
+
+def test_is_pinching_scales_with_hand_size():
+    assert is_pinching(pinch("Right", 0.5, 0.5), 0.35)
+    assert not is_pinching(point("Right", 0.5, 0.5), 0.35)  # thumb resting on the folded fingers
+    assert not is_pinching(pinch("Right", 0.5, 0.5, button="right"), 0.35)  # thumb on the middle finger
+
+
+def test_only_the_driver_keeps_control_while_pinching():
+    hand = pinch("Left", 0.5, 0.5)
+    assert pick_pointer_hand([hand], "Left", 0.5, 0.35) is hand
+    assert pick_pointer_hand([hand], None, 0.5, 0.35) is None  # must point first
+    assert pick_pointer_hand([hand], "Right", 0.5, 0.35) is None

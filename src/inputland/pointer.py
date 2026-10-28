@@ -1,3 +1,5 @@
+import time
+
 from evdev import AbsInfo, UInput, ecodes
 
 ABS_MAX = 32767
@@ -27,6 +29,13 @@ class VirtualPointer:
         self._device.write(ecodes.EV_ABS, ecodes.ABS_X, round(u * ABS_MAX))
         self._device.write(ecodes.EV_ABS, ecodes.ABS_Y, round(v * ABS_MAX))
         self._device.syn()
+
+    def double_click(self) -> None:
+        """Two left clicks in one burst, so the desktop's double-click timeout cannot split them."""
+        for value in (1, 0, 1, 0):
+            self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, value)
+            self._device.syn()
+            time.sleep(0.03)  # libinput's button debouncing drops a release and press closer than ~25 ms
 
     def close(self) -> None:
         self._device.close()

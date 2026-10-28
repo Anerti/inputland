@@ -38,8 +38,12 @@ class Settings:
     # One Euro filter, in screen units (0..1): lower min_cutoff = less jitter, higher beta = less lag.
     min_cutoff: float = 1.0
     beta: float = 10.0
+    # Pinch = thumb-index tip distance below this fraction of the hand size; triggers a double click.
+    pinch_ratio: float = 0.35
     preview: bool = False
 
     def __post_init__(self) -> None:
         if not (self.min_cutoff > 0 and self.beta >= 0):
             raise ValueError(f"need min_cutoff > 0 and beta >= 0, got {self.min_cutoff} and {self.beta}")
+        if not 0 < self.pinch_ratio < 1:
+            raise ValueError(f"need 0 < pinch_ratio < 1, got {self.pinch_ratio}")

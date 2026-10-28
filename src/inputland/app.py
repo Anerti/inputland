@@ -10,7 +10,7 @@ import numpy as np
 from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, pick_pointer_hand
+from inputland.gestures import Debounce, is_pinching, pick_pointer_hand
 from inputland.pointer import VirtualPointer
 from inputland.tracking import INDEX_MCP, Hand, HandTracker, ensure_model
 
@@ -42,8 +42,11 @@ def run(
         gate = Debounce(settings.engage_frames, settings.release_frames)
         smooth_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         smooth_y = OneEuroFilter(settings.min_cutoff, settings.beta)
-        log.info("running; point with either index finger to move the cursor")
+        pinch = Debounce(settings.engage_frames, settings.release_frames)
+        log.info("running; point with either index finger to move the cursor, pinch to double click")
         driver: str | None = None
+        # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
+        last_driver: str | None = None
         last_status = None
 
         for frame in camera.frames():
@@ -51,7 +54,9 @@ def run(
                 break
             now = time.monotonic()
             hands = tracker.detect(frame, int(now * 1000))
-            hand = pick_pointer_hand(hands, driver, settings.min_gesture_score)
+            if not hands:
+                last_driver = None  # hand left the view: point again before pinching
+            hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
 
             active = gate.update(hand is not None)
             if not active:
@@ -62,11 +67,17 @@ def run(
                     log.debug("cursor driven by %s hand", hand.side.lower())
                     smooth_x.reset()
                     smooth_y.reset()
-                    driver = hand.side
-                # Base of the index finger: steadier than the fingertip, and it will
-                # not move when pinch/fold gestures are added later.
+                    driver = last_driver = hand.side
+                # Base of the index finger: steadier than the fingertip, and it does not move while pinching.
                 u, v = settings.region.normalize(*hand.landmarks[INDEX_MCP])
                 pointer.move_to(smooth_x(u, now), smooth_y(v, now))
+
+            # Only the driver's pinch counts, once per pinch: it must open again before the next double click.
+            was_pinching = pinch.state
+            if pinch.update(driver is not None and hand is not None and is_pinching(hand, settings.pinch_ratio)):
+                if not was_pinching:
+                    log.debug("double click")
+                    pointer.double_click()
 
             status = Status(driver, tuple(sorted((h.side, h.gesture) for h in hands)))
             if status != last_status:
