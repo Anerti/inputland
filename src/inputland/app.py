@@ -15,7 +15,7 @@ from inputland.gestures import (
     Debounce, is_gesture, is_pinching, pick_pointer_hand,
 )
 from inputland.pointer import VirtualPointer
-from inputland.tracking import INDEX_MCP, Hand, HandTracker, ensure_model
+from inputland.tracking import INDEX_MCP, OTHER_SIDE, Hand, HandTracker, ensure_model
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class Status:
     copied: str | None = None  # side holding the 👍 that copied
     pasted: str | None = None  # side holding the 👎 that pasted
     zooming: str | None = None  # side of the last driver while two open palms zoom
+    paused: bool = False  # a fist paused control; an open palm resumes it
 
 
 def run(
@@ -57,10 +58,14 @@ def run(
         palms = Debounce(settings.engage_frames, settings.release_frames)
         thumb_up = Debounce(settings.engage_frames, settings.release_frames)
         thumb_down = Debounce(settings.paste_frames, settings.release_frames)
+        # Per side, so a fist or palm the other hand already holds does not hide this one's.
+        fists = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
+        wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
             "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
-            "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom"
+            "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom; "
+            "make a fist to pause, open a palm to resume"
         )
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
@@ -68,6 +73,7 @@ def run(
         last_status = None
         scroll_anchor = spread_anchor = 0.0
         palm_axis: str | None = None  # "scroll" or "zoom" once the open palms leave a dead zone
+        paused = False
         last_frame = time.monotonic()
 
         for frame in camera.frames():
@@ -75,7 +81,15 @@ def run(
                 break
             now = time.monotonic()
             dt, last_frame = now - last_frame, now
-            hands = tracker.detect(frame, int(now * 1000))
+            seen = tracker.detect(frame, int(now * 1000))
+            fists_closed = _started_by_either(fists, seen, "Closed_Fist", settings.min_gesture_score)
+            palms_opened = _started_by_either(wake, seen, "Open_Palm", settings.min_gesture_score)
+            # Closing a hand ends the two open palms; it does not pause too.
+            if palms_opened if paused else fists_closed and not palms.state:
+                paused = not paused
+                log.info("paused; open a palm to resume" if paused else "resumed")
+            # Paused winds down like hands leaving the view: button up, Ctrl let go, cursor idle.
+            hands = [] if paused else seen
             if not hands and not palms.state:  # a frame dropped mid-scroll keeps the scroller
                 last_driver = None  # hand left the view: point again before pinching
             hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
@@ -157,13 +171,13 @@ def run(
                 pinch.state, owner if victory.state else None, edge,
                 owner if palms.state and palm_axis != "zoom" else None,
                 owner if thumb_up.state else None, owner if thumb_down.state else None,
-                owner if palms.state and palm_axis == "zoom" else None,
+                owner if palms.state and palm_axis == "zoom" else None, paused,
             )
             if status != last_status:
                 on_status(status)
                 last_status = status
 
-            if settings.preview and not _show_preview(frame, hands, driver is not None, settings):
+            if settings.preview and not _show_preview(frame, seen, driver is not None, settings):
                 break
 
 
@@ -171,6 +185,15 @@ def _started(debounce: Debounce, raw: bool) -> bool:
     """True on the frame `debounce` turns on."""
     was = debounce.state
     return debounce.update(raw) and not was
+
+
+def _started_by_either(debounces: dict[str, Debounce], hands: list[Hand], gesture: str, min_score: float) -> bool:
+    """True on the frame either side's `gesture` turns on in `debounces` (one per side)."""
+    # A list, not a generator: every side's debounce must see this frame.
+    return any([
+        _started(d, any(h.side == side and is_gesture(h, gesture, min_score) for h in hands))
+        for side, d in debounces.items()
+    ])
 
 
 def _excess(offset: float, dead_zone: float) -> float:

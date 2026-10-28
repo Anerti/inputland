@@ -222,6 +222,44 @@ def test_open_palms_scrolling_first_does_not_zoom(devices):
     assert _palm_events(devices.events) == [("scroll", True), ("scroll", True)]
 
 
+def test_a_fist_pauses_until_an_open_palm(devices):
+    o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
+    fist, palm = hand("Left", 0.3, 0.45, gesture="Closed_Fist"), hand("Left", 0.3, 0.45, gesture="Open_Palm")
+    # The other hand's fist mid-drag lets the button go; pointing while paused does nothing; a palm resumes.
+    devices.script = [[o], [p], [p, fist], [o], [palm], [o]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1), statuses.append)
+
+    labels = [e if isinstance(e, str) else "move" for e in devices.events]
+    assert labels == ["move", "move", "down", "up", "move"]
+    assert [s.paused for s in statuses] == [False, False, True, False, False]
+
+
+def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):
+    lp, rf = hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.6, 0.45, gesture="Closed_Fist")
+    rp = hand("Right", 0.6, 0.45, gesture="Open_Palm")
+    devices.script = [[lp], [lp, rf], [lp, rp], [point("Right", 0.6, 0.45)]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1), statuses.append)
+
+    assert [s.paused for s in statuses] == [False, True, False, False]
+    assert [e for e in devices.events if not isinstance(e, str)]  # the cursor moves again
+
+
+def test_closing_a_hand_to_stop_scrolling_does_not_pause(devices):
+    o = point("Right", 0.6, 0.45)
+    lp, rp = hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.6, 0.45, gesture="Open_Palm")
+    devices.script = [[o], [lp, rp], [lp, rp], [lp, hand("Right", 0.6, 0.45, gesture="Closed_Fist")], [o]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1), statuses.append)
+
+    assert not any(s.paused for s in statuses)
+    assert statuses[-1].driver == "Right"
+
+
 def test_settings_reject_filter_values_that_break_smoothing():
     with pytest.raises(ValueError):
         Settings(min_cutoff=0)

@@ -6,7 +6,8 @@ Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland),
 While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag. Raise your middle finger too (✌️) to right click.
 Thumbs up (👍) copies and thumbs down (👎, held a moment longer) pastes, with the hand that was pointing. They send Ctrl+Insert and Shift+Insert, which most apps take as copy and paste and which, unlike Ctrl+C, do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
 To scroll, open both palms (🖐️🖐️) and move the hand that was pointing up or down from where it started: the further you move it, the faster it scrolls. Spread the open palms apart to zoom in, bring them together to zoom out (Ctrl+wheel, so most apps zoom around the cursor); the further, the faster. Whichever starts first, scroll or zoom, keeps the gesture until you close either hand to stop.
-A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Scrolling`, `Zooming`, `At edge` when the hand is outside the mapped region) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
+Make a fist (✊) with either hand to pause: the hands are ignored, so you can gesture freely, until you open a palm (🖐️) to resume.
+A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Scrolling`, `Zooming`, `At edge` when the hand is outside the mapped region, `Paused`) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
 
 ## Setup
 

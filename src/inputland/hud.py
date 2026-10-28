@@ -42,7 +42,7 @@ ABSENT = "Not seen"
 IGNORED = "-"  # a pose that does nothing
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Scrolling",
-    "Zooming",
+    "Zooming", "Paused",
 )
 NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
 
@@ -158,6 +158,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
     """What the segment of `side` says, and its CSS state."""
     if status is None:
         return STARTING, "absent"
+    if status.paused:
+        return "Paused", "absent"
     if side == status.right_click:
         return "Right click", "driving"
     if side == status.copied:
