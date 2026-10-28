@@ -11,6 +11,10 @@ def is_victory(hand: Hand, min_score: float) -> bool:
     return hand.gesture == "Victory" and hand.score >= min_score
 
 
+def is_palm(hand: Hand, min_score: float) -> bool:
+    return hand.gesture == "Open_Palm" and hand.score >= min_score
+
+
 def is_pinching(hand: Hand, ratio: float) -> bool:
     """Thumb tip on the index tip, closer than `ratio` x the hand size (wrist to middle knuckle)."""
     lm = hand.landmarks

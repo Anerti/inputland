@@ -1,4 +1,5 @@
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -10,7 +11,7 @@ import numpy as np
 from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_pinching, is_victory, pick_pointer_hand
+from inputland.gestures import Debounce, is_palm, is_pinching, is_victory, pick_pointer_hand
 from inputland.pointer import VirtualPointer
 from inputland.tracking import INDEX_MCP, Hand, HandTracker, ensure_model
 
@@ -28,6 +29,7 @@ class Status:
     pressed: bool = False  # the driver holds the left button (pinch: click or drag)
     right_click: str | None = None  # side holding the ✌️ that right clicked
     edge: bool = False  # cursor pinned to a screen edge: the hand is outside the region
+    scrolling: str | None = None  # side whose hand scrolls (two open palms)
 
 
 def run(
@@ -47,21 +49,26 @@ def run(
         smooth_y = OneEuroFilter(settings.min_cutoff, settings.beta)
         pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
         victory = Debounce(settings.engage_frames, settings.release_frames)
+        palms = Debounce(settings.engage_frames, settings.release_frames)
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
-            "raise the middle finger too to right click"
+            "raise the middle finger too to right click, "
+            "open both palms and move the pointing hand up or down to scroll"
         )
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
         last_driver: str | None = None
         last_status = None
+        scroll_anchor = 0.0
+        last_frame = time.monotonic()
 
         for frame in camera.frames():
             if stop is not None and stop.is_set():
                 break
             now = time.monotonic()
+            dt, last_frame = now - last_frame, now
             hands = tracker.detect(frame, int(now * 1000))
-            if not hands:
+            if not hands and not palms.state:  # a frame dropped mid-scroll keeps the scroller
                 last_driver = None  # hand left the view: point again before pinching
             hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
 
@@ -99,9 +106,25 @@ def run(
                     log.debug("right click")
                     pointer.right_click()
 
+            # Two open palms scroll, joystick style: the last driver's hand, above where the palms opened, scrolls up.
+            mover = next((h for h in hands if h.side == owner), None)
+            both_palms = (
+                mover is not None and len(hands) == 2 and all(is_palm(h, settings.min_gesture_score) for h in hands)
+            )
+            was_scrolling = palms.state
+            if palms.update(both_palms) and both_palms:
+                y = mover.landmarks[INDEX_MCP][1]
+                if not was_scrolling:
+                    log.debug("scrolling")
+                    scroll_anchor = y
+                offset = scroll_anchor - y  # image y grows downward
+                excess = max(abs(offset) - settings.scroll_dead_zone, 0.0)
+                if excess:
+                    pointer.scroll(math.copysign(excess, offset) * settings.scroll_speed * dt)
+
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
-                pinch.state, owner if victory.state else None, edge,
+                pinch.state, owner if victory.state else None, edge, owner if palms.state else None,
             )
             if status != last_status:
                 on_status(status)

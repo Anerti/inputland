@@ -17,6 +17,7 @@ except (ImportError, RuntimeError):  # no GTK 4 or gtk4-layer-shell on this mach
         (Status("Right", (("Left", "Pointing_Up"), ("Right", "None")), pressed=True), "Pointing", "Pinch"),
         (Status("Right", (("Right", "Pointing_Up"),), edge=True), "Not seen", "At edge"),
         (Status(None, (("Right", "Victory"),), right_click="Right"), "Not seen", "Right click"),
+        (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), "Scrolling", "Scrolling"),
     ],
 )
 def test_hud_shows_actions_not_gestures(status, left, right):

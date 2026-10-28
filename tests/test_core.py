@@ -129,3 +129,22 @@ def test_pointer_without_uinput_access_points_to_the_readme(monkeypatch):
     monkeypatch.setattr(pointer, "UInput", denied)
     with pytest.raises(RuntimeError, match="Permissions"):
         pointer.VirtualPointer()
+
+
+def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(monkeypatch):
+    from inputland import pointer
+
+    writes = []
+
+    class Device:
+        def __init__(self, *a, **kw): ...
+        def write(self, type, code, value): writes.append((code, value))
+        def syn(self): ...
+
+    monkeypatch.setattr(pointer, "UInput", Device)
+    p = pointer.VirtualPointer()
+    for notches in (0.004, 0.5, 0.6, -0.3):
+        p.scroll(notches)
+
+    hi = pointer.ecodes.REL_WHEEL_HI_RES
+    assert writes == [(hi, 60), (hi, 72), (pointer.ecodes.REL_WHEEL, 1), (hi, -35)]  # the 0.004 is kept, not lost

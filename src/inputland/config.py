@@ -42,6 +42,10 @@ class Settings:
     beta: float = 10.0
     # Pinch = thumb-index tip distance below this fraction of the hand size; holds the left button (click or drag).
     pinch_ratio: float = 0.35
+    # Two open palms scroll: the driver hand moving past the dead zone (fraction of the frame height) from where
+    # the palms opened scrolls at scroll_speed wheel clicks per second per frame height beyond it.
+    scroll_dead_zone: float = 0.03
+    scroll_speed: float = 80.0
     preview: bool = False
 
     def __post_init__(self) -> None:
@@ -49,3 +53,8 @@ class Settings:
             raise ValueError(f"need min_cutoff > 0 and beta >= 0, got {self.min_cutoff} and {self.beta}")
         if not 0 < self.pinch_ratio < 1:
             raise ValueError(f"need 0 < pinch_ratio < 1, got {self.pinch_ratio}")
+        if not (0 <= self.scroll_dead_zone < 0.5 and self.scroll_speed > 0):
+            raise ValueError(
+                f"need 0 <= scroll_dead_zone < 0.5 and scroll_speed > 0, "
+                f"got {self.scroll_dead_zone} and {self.scroll_speed}"
+            )

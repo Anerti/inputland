@@ -18,6 +18,7 @@ class VirtualPointer:
             ecodes.EV_ABS: [(ecodes.ABS_X, axis), (ecodes.ABS_Y, axis)],
             # Without a button, libinput does not classify the device as a pointer and ignores it.
             ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT],
+            ecodes.EV_REL: [ecodes.REL_WHEEL, ecodes.REL_WHEEL_HI_RES],
         }
         try:
             self._device = UInput(capabilities, name=name)
@@ -25,6 +26,8 @@ class VirtualPointer:
         except (PermissionError, UInputError) as e:
             raise RuntimeError(f"cannot use /dev/uinput ({e}); see README 'Permissions'") from e
         self._pressed_at: float | None = None
+        self._wheel = 0.0  # hi-res units not sent yet
+        self._notch_units = 0  # hi-res units sent since the last REL_WHEEL click
 
     def move_to(self, u: float, v: float) -> None:
         """Move to screen position (u, v), each 0..1."""
@@ -48,6 +51,21 @@ class VirtualPointer:
         self._button(ecodes.BTN_RIGHT, 1)
         time.sleep(0.03)  # same libinput debouncing as `release`
         self._button(ecodes.BTN_RIGHT, 0)
+
+    def scroll(self, notches: float) -> None:
+        """Scroll by `notches` wheel clicks, fractions included; positive scrolls up."""
+        self._wheel += notches * 120  # kernel convention: 120 hi-res units per click
+        hi = int(self._wheel)
+        if not hi:
+            return
+        self._wheel -= hi
+        self._device.write(ecodes.EV_REL, ecodes.REL_WHEEL_HI_RES, hi)
+        # libinput scrolls smoothly from the hi-res axis; clients that only read REL_WHEEL get whole clicks.
+        self._notch_units += hi
+        if clicks := int(self._notch_units / 120):
+            self._device.write(ecodes.EV_REL, ecodes.REL_WHEEL, clicks)
+            self._notch_units -= clicks * 120
+        self._device.syn()
 
     def _button(self, button: int, value: int) -> None:
         self._device.write(ecodes.EV_KEY, button, value)

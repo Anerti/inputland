@@ -34,6 +34,9 @@ def devices(monkeypatch):
         def right_click(self):
             self.events.append("right")
 
+        def scroll(self, notches):
+            self.events.append(("scroll", notches))
+
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
     for name in ("Camera", "HandTracker", "VirtualPointer"):
@@ -121,6 +124,25 @@ def test_status_reports_button_right_click_and_edge(devices):
     ]
 
 
+def test_two_open_palms_scroll_with_the_last_driver(devices):
+    o = point("Right", 0.5, 0.45)
+
+    def palms(y):
+        return [hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.5, y, gesture="Open_Palm")]
+
+    # Palms before pointing do nothing; then anchor, move up, back into the dead zone, down; one palm stops it.
+    # A frame with no hands mid-scroll does not end it.
+    one_palm = [palms(0.3)[1]]
+    devices.script = [palms(0.3), [o], palms(0.45), palms(0.3), [], palms(0.47), palms(0.6), one_palm, one_palm]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=2, scroll_dead_zone=0.05), statuses.append)
+
+    scrolls = [e[1] for e in devices.events if isinstance(e, tuple) and e[0] == "scroll"]
+    assert [s > 0 for s in scrolls] == [True, False]  # hand up scrolls up, hand down scrolls down
+    assert [s.scrolling for s in statuses] == [None, None, *["Right"] * 5, None]
+
+
 def test_settings_reject_filter_values_that_break_smoothing():
     with pytest.raises(ValueError):
         Settings(min_cutoff=0)
@@ -128,3 +150,5 @@ def test_settings_reject_filter_values_that_break_smoothing():
         Settings(beta=-1)
     with pytest.raises(ValueError):
         Settings(pinch_ratio=0)
+    with pytest.raises(ValueError):
+        Settings(scroll_speed=0)

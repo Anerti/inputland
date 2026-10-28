@@ -21,6 +21,14 @@ def main() -> None:
         "--pinch-ratio", type=float, default=defaults.pinch_ratio,
         help="thumb-index distance (fraction of hand size) that counts as a pinch",
     )
+    parser.add_argument(
+        "--scroll-speed", type=float, default=defaults.scroll_speed,
+        help="wheel clicks per second per frame height the hand moves while scrolling (two open palms)",
+    )
+    parser.add_argument(
+        "--scroll-dead-zone", type=float, default=defaults.scroll_dead_zone,
+        help="hand travel (fraction of frame height) that does not scroll yet",
+    )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
@@ -40,6 +48,8 @@ def main() -> None:
             min_cutoff=args.min_cutoff,
             beta=args.beta,
             pinch_ratio=args.pinch_ratio,
+            scroll_speed=args.scroll_speed,
+            scroll_dead_zone=args.scroll_dead_zone,
             preview=args.preview,
         )
         # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.

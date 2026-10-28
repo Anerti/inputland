@@ -40,7 +40,7 @@ STARTING = "Starting"
 IDLE = "Point to start"  # no hand in view
 ABSENT = "Not seen"
 IGNORED = "-"  # a pose that does nothing
-TEXTS = (STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click")
+TEXTS = (STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Scrolling")
 NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
 
 # Used outside Omarchy, or when the theme file is missing a key.
@@ -157,6 +157,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return STARTING, "absent"
     if side == status.right_click:
         return "Right click", "driving"
+    if status.scrolling:  # both hands make the gesture; highlight the one that scrolls
+        return "Scrolling", "driving" if side == status.scrolling else "seen"
     if side == status.driver:
         return "Pinch" if status.pressed else "At edge" if status.edge else "Moving", "driving"
     gesture = dict(status.hands).get(side)
