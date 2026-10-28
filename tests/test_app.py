@@ -31,6 +31,9 @@ def devices(monkeypatch):
         def release(self):
             self.events.append("up")
 
+        def right_click(self):
+            self.events.append("right")
+
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
     for name in ("Camera", "HandTracker", "VirtualPointer"):
@@ -71,6 +74,17 @@ def test_hand_leaving_mid_drag_releases_the_button(devices):
     app.run(Settings(engage_frames=1, release_frames=1))
 
     assert [e for e in devices.events if isinstance(e, str)] == ["down", "up"]
+
+
+def test_victory_right_clicks_once_after_pointing(devices):
+    o, v = point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="Victory")
+    # A ✌️ before pointing and the other hand's ✌️ do nothing; a held ✌️ clicks once.
+    devices.script = [[v], [o], [hand("Left", 0.2, 0.2, gesture="Victory")], [v], [v], [o], [v]]
+
+    app.run(Settings(engage_frames=1, release_frames=1))
+
+    labels = [e if isinstance(e, str) else "move" for e in devices.events]
+    assert labels == ["move", "right", "move", "right"]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):

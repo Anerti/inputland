@@ -32,6 +32,7 @@ Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `
 - **Filters reset when the driving hand changes**, so the cursor jumps instead of gliding between hands.
 - **A pinch by the driver holds the left button**: down when it closes, up when it opens, so a quick pinch clicks and a held one drags. `VirtualPointer.release` keeps at least 30 ms after the press because libinput's button debouncing drops closer ones, and `close` releases a held button.
 - **A pinching driver keeps control** even though MediaPipe no longer calls it `Pointing_Up`. The last driver can also take control back by pinching (a slow pinch passes through unrecognized poses), until no hand is in view.
+- **✌️ by the last driver is a right click**, once per ✌️, and only after that hand pointed: a stray ✌️ does nothing.
 - **`--preview` disables the HUD**: OpenCV's window segfaults next to GTK.
 - **Model URL is pinned** (`float16/1`), not `latest`, so the gesture set cannot change underneath. Downloads go to a `.part` file then rename atomically.
 - **HUD clicks pass through** via an empty input region; segment width is fixed (`NAME_CHARS`) so the overlay never resizes.

@@ -3,7 +3,7 @@
 Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland), X11 and the TTY.
 
 **Current scope:** point with either index finger (☝️) to move the cursor. Any other pose releases it. If both hands point, the hand already moving the cursor keeps it.
-While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag.
+While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag. Raise your middle finger too (✌️) to right click.
 A HUD in the top-right corner shows the gesture of each hand and highlights the one moving the cursor, in your Omarchy theme colors.
 
 ## Setup
@@ -53,7 +53,7 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 |---|---|
 | `camera.py` | OpenCV V4L2 capture, mirrored frames |
 | `tracking.py` | MediaPipe `GestureRecognizer` → `Hand` (side, gesture, 21 landmarks); model download |
-| `gestures.py` | Pose rules (`is_pointing`, `is_pinching`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
+| `gestures.py` | Pose rules (`is_pointing`, `is_pinching`, `is_victory`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
 | `filters.py` | One Euro filter (jitter vs. lag) |
 | `config.py` | `Settings`, `Region` (camera box → screen) |
 | `pointer.py` | uinput absolute pointer (evdev) |

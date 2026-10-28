@@ -10,7 +10,7 @@ import numpy as np
 from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_pinching, pick_pointer_hand
+from inputland.gestures import Debounce, is_pinching, is_victory, pick_pointer_hand
 from inputland.pointer import VirtualPointer
 from inputland.tracking import INDEX_MCP, Hand, HandTracker, ensure_model
 
@@ -43,7 +43,11 @@ def run(
         smooth_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         smooth_y = OneEuroFilter(settings.min_cutoff, settings.beta)
         pinch = Debounce(settings.engage_frames, settings.release_frames)
-        log.info("running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag")
+        victory = Debounce(settings.engage_frames, settings.release_frames)
+        log.info(
+            "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
+            "raise the middle finger too to right click"
+        )
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
         last_driver: str | None = None
@@ -81,6 +85,14 @@ def run(
                     pointer.release()
                 else:
                     pointer.press()
+
+            # ✌️ by the last driver right clicks once; it no longer points, so the cursor stays where it aimed.
+            was_victory = victory.state
+            owner = driver or last_driver
+            if victory.update(any(h.side == owner and is_victory(h, settings.min_gesture_score) for h in hands)):
+                if not was_victory:
+                    log.debug("right click")
+                    pointer.right_click()
 
             status = Status(driver, tuple(sorted((h.side, h.gesture) for h in hands)))
             if status != last_status:

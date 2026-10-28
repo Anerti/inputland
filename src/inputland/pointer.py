@@ -17,7 +17,7 @@ class VirtualPointer:
         capabilities = {
             ecodes.EV_ABS: [(ecodes.ABS_X, axis), (ecodes.ABS_Y, axis)],
             # Without a button, libinput does not classify the device as a pointer and ignores it.
-            ecodes.EV_KEY: [ecodes.BTN_LEFT],
+            ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT],
         }
         try:
             self._device = UInput(capabilities, name=name)
@@ -32,7 +32,7 @@ class VirtualPointer:
         self._device.syn()
 
     def press(self) -> None:
-        self._button(1)
+        self._button(ecodes.BTN_LEFT, 1)
         self._pressed_at = time.monotonic()
 
     def release(self) -> None:
@@ -40,11 +40,16 @@ class VirtualPointer:
             return
         # libinput's button debouncing can drop a release closer than ~25 ms to the press
         time.sleep(max(0.0, self._pressed_at + 0.03 - time.monotonic()))
-        self._button(0)
+        self._button(ecodes.BTN_LEFT, 0)
         self._pressed_at = None
 
-    def _button(self, value: int) -> None:
-        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, value)
+    def right_click(self) -> None:
+        self._button(ecodes.BTN_RIGHT, 1)
+        time.sleep(0.03)  # same libinput debouncing as `release`
+        self._button(ecodes.BTN_RIGHT, 0)
+
+    def _button(self, button: int, value: int) -> None:
+        self._device.write(ecodes.EV_KEY, button, value)
         self._device.syn()
 
     def close(self) -> None:
