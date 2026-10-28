@@ -30,12 +30,12 @@ Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `
 - **Handedness is swapped** (`OTHER_SIDE`): frames are mirrored, so MediaPipe reports the opposite hand. `Hand.side` is the user's real hand.
 - **Cursor anchor is `INDEX_MCP`** (base of the index finger), not the fingertip: steadier, and stays put while pinching.
 - **Filters reset when the driving hand changes**, so the cursor jumps instead of gliding between hands.
-- **A pinch by the driver is a double click**, once per pinch. `VirtualPointer.double_click` sends both clicks itself so the desktop's double-click timeout cannot split them, 30 ms apart because libinput's button debouncing merges closer ones.
+- **A pinch by the driver is a left click**, once per pinch. `VirtualPointer.click` sleeps 30 ms between press and release because libinput's button debouncing drops closer ones.
 - **A pinching driver keeps control** even though MediaPipe no longer calls it `Pointing_Up`. The last driver can also take control back by pinching (a slow pinch passes through unrecognized poses), until no hand is in view.
 - **`--preview` disables the HUD**: OpenCV's window segfaults next to GTK.
-- **`VirtualPointer` declares `BTN_LEFT`** even though it never clicks; without it libinput ignores the device.
 - **Model URL is pinned** (`float16/1`), not `latest`, so the gesture set cannot change underneath. Downloads go to a `.part` file then rename atomically.
 - **HUD clicks pass through** via an empty input region; segment width is fixed (`NAME_CHARS`) so the overlay never resizes.
+- **`HandTracker` runs on the GPU delegate**, falling back to the CPU: on a throttled CPU (battery, power-saver) inference takes 30–60 ms, over the 33 ms frame budget, and the cursor stutters.
 - **`HandTracker.detect` forces strictly increasing timestamps**: MediaPipe VIDEO mode rejects repeats.
 
 ## Errors

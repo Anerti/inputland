@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from hands import pinch, point
 
@@ -72,3 +74,20 @@ def test_only_the_driver_keeps_control_while_pinching():
     assert pick_pointer_hand([hand], "Left", 0.5, 0.35) is hand
     assert pick_pointer_hand([hand], None, 0.5, 0.35) is None  # must point first
     assert pick_pointer_hand([hand], "Right", 0.5, 0.35) is None
+
+
+def test_tracker_falls_back_to_cpu_without_gpu(monkeypatch):
+    from inputland import tracking
+
+    tried = []
+
+    def create(options):
+        tried.append(options.base_options.delegate)
+        if options.base_options.delegate == tracking.BaseOptions.Delegate.GPU:
+            raise RuntimeError('Service "kGpuService" ... unavailable')
+        return "cpu recognizer"
+
+    monkeypatch.setattr(tracking.vision.GestureRecognizer, "create_from_options", create)
+    tracker = tracking.HandTracker(Path("model"))
+    assert tried == [tracking.BaseOptions.Delegate.GPU, tracking.BaseOptions.Delegate.CPU]
+    assert tracker._recognizer == "cpu recognizer"

@@ -38,7 +38,7 @@ class Settings:
     # One Euro filter, in screen units (0..1): lower min_cutoff = less jitter, higher beta = less lag.
     min_cutoff: float = 1.0
     beta: float = 10.0
-    # Pinch = thumb-index tip distance below this fraction of the hand size; triggers a double click.
+    # Pinch = thumb-index tip distance below this fraction of the hand size; triggers a left click.
     pinch_ratio: float = 0.35
     preview: bool = False
 

@@ -55,12 +55,21 @@ def ensure_model() -> Path:
 
 class HandTracker:
     def __init__(self, model: Path, max_hands: int = 2) -> None:
-        options = vision.GestureRecognizerOptions(
-            base_options=BaseOptions(model_asset_path=str(model)),
-            running_mode=vision.RunningMode.VIDEO,
-            num_hands=max_hands,
-        )
-        self._recognizer = vision.GestureRecognizer.create_from_options(options)
+        # GPU first: on a throttled CPU (battery, power-saver) inference overruns the 33 ms frame budget
+        # and the cursor stutters; the GPU stays at ~16 ms.
+        for delegate in (BaseOptions.Delegate.GPU, BaseOptions.Delegate.CPU):
+            options = vision.GestureRecognizerOptions(
+                base_options=BaseOptions(model_asset_path=str(model), delegate=delegate),
+                running_mode=vision.RunningMode.VIDEO,
+                num_hands=max_hands,
+            )
+            try:
+                self._recognizer = vision.GestureRecognizer.create_from_options(options)
+                break
+            except RuntimeError as e:
+                if delegate == BaseOptions.Delegate.CPU:
+                    raise
+                log.warning("GPU unavailable, tracking on the CPU (the cursor may stutter): %s", str(e)[:200])
         self._last_ts = -1
 
     def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> list[Hand]:

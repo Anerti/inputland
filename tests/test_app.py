@@ -25,8 +25,8 @@ def devices(monkeypatch):
         def move_to(self, u, v):
             self.events.append((u, v))
 
-        def double_click(self):
-            self.events.append("double")
+        def click(self):
+            self.events.append("click")
 
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
@@ -48,17 +48,17 @@ def test_run_engages_switches_hands_and_releases(devices):
     assert [c for m in devices.events for c in m] == pytest.approx([0.5, 0.5] * 3 + [1.0, 1.0])
 
 
-def test_pinch_double_clicks_once_per_pinch(devices):
+def test_pinch_clicks_once_per_pinch(devices):
     p, o = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45)
     # Pinch without pointing first, then point, hold a pinch, open, pinch again.
     devices.script = [[p], [o], [p], [p], [p], [o], [p]]
 
     app.run(Settings(engage_frames=1, release_frames=1))
 
-    # The pinching hand keeps moving the cursor; one double click per pinch, none before the hand pointed.
-    moves = [e for e in devices.events if e != "double"]
+    # The pinching hand keeps moving the cursor; one click per pinch, none before the hand pointed.
+    moves = [e for e in devices.events if e != "click"]
     assert len(moves) == 6
-    assert [i for i, e in enumerate(devices.events) if e == "double"] == [2, 7]
+    assert [i for i, e in enumerate(devices.events) if e == "click"] == [2, 7]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
@@ -68,8 +68,8 @@ def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
 
     app.run(Settings(engage_frames=1, release_frames=1))
 
-    assert devices.events.count("double") == 1
-    assert devices.events.index("double") == 2  # move (pointing), move (pinch re-engaged), double
+    assert devices.events.count("click") == 1
+    assert devices.events.index("click") == 2  # move (pointing), move (pinch re-engaged), click
 
 
 def test_settings_reject_filter_values_that_break_smoothing():

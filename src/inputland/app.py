@@ -43,7 +43,7 @@ def run(
         smooth_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         smooth_y = OneEuroFilter(settings.min_cutoff, settings.beta)
         pinch = Debounce(settings.engage_frames, settings.release_frames)
-        log.info("running; point with either index finger to move the cursor, pinch to double click")
+        log.info("running; point with either index finger to move the cursor, pinch to left click")
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
         last_driver: str | None = None
@@ -72,12 +72,12 @@ def run(
                 u, v = settings.region.normalize(*hand.landmarks[INDEX_MCP])
                 pointer.move_to(smooth_x(u, now), smooth_y(v, now))
 
-            # Only the driver's pinch counts, once per pinch: it must open again before the next double click.
+            # Only the driver's pinch counts, once per pinch: it must open again before the next click.
             was_pinching = pinch.state
             if pinch.update(driver is not None and hand is not None and is_pinching(hand, settings.pinch_ratio)):
                 if not was_pinching:
-                    log.debug("double click")
-                    pointer.double_click()
+                    log.debug("left click")
+                    pointer.click()
 
             status = Status(driver, tuple(sorted((h.side, h.gesture) for h in hands)))
             if status != last_status:

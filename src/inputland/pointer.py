@@ -30,12 +30,12 @@ class VirtualPointer:
         self._device.write(ecodes.EV_ABS, ecodes.ABS_Y, round(v * ABS_MAX))
         self._device.syn()
 
-    def double_click(self) -> None:
-        """Two left clicks in one burst, so the desktop's double-click timeout cannot split them."""
-        for value in (1, 0, 1, 0):
-            self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, value)
-            self._device.syn()
-            time.sleep(0.03)  # libinput's button debouncing drops a release and press closer than ~25 ms
+    def click(self) -> None:
+        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1)
+        self._device.syn()
+        time.sleep(0.03)  # libinput's button debouncing can drop a release closer than ~25 ms to the press
+        self._device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)
+        self._device.syn()
 
     def close(self) -> None:
         self._device.close()
