@@ -135,7 +135,9 @@ def test_pointer_without_uinput_access_points_to_the_readme(monkeypatch):
         pointer.VirtualPointer()
 
 
-def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(monkeypatch):
+@pytest.fixture
+def uinput(monkeypatch):
+    """Real `VirtualPointer` on a fake device; `.writes` collects (code, value)."""
     from inputland import pointer
 
     writes = []
@@ -144,11 +146,67 @@ def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(monkeypatch):
         def __init__(self, *a, **kw): ...
         def write(self, type, code, value): writes.append((code, value))
         def syn(self): ...
+        def close(self): ...
 
     monkeypatch.setattr(pointer, "UInput", Device)
     p = pointer.VirtualPointer()
-    for notches in (0.004, 0.5, 0.6, -0.3):
-        p.scroll(notches)
+    p.writes = writes
+    return p
 
-    hi = pointer.ecodes.REL_WHEEL_HI_RES
-    assert writes == [(hi, 60), (hi, 72), (pointer.ecodes.REL_WHEEL, 1), (hi, -35)]  # the 0.004 is kept, not lost
+
+def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(uinput):
+    from inputland.pointer import ecodes
+
+    for notches in (0.004, 0.5, 0.6, -0.3):
+        uinput.scroll(notches)
+
+    hi = ecodes.REL_WHEEL_HI_RES
+    assert uinput.writes == [(hi, 60), (hi, 72), (ecodes.REL_WHEEL, 1), (hi, -35)]  # the 0.004 is kept, not lost
+
+
+def test_pointer_close_lets_go_of_button_and_ctrl(uinput):
+    from inputland.pointer import ecodes
+
+    uinput.press()
+    uinput.zoom(1)
+    uinput.close()
+
+    assert {(ecodes.BTN_LEFT, 0), (ecodes.KEY_LEFTCTRL, 0)} <= set(uinput.writes[-2:])
+
+
+def test_pointer_clicks_and_keys_let_go_of_zoom_ctrl_first(uinput):
+    from inputland.pointer import ecodes
+
+    for action, first in ((uinput.press, ecodes.BTN_LEFT), (uinput.right_click, ecodes.BTN_RIGHT),
+                          (uinput.copy, ecodes.KEY_LEFTCTRL), (uinput.paste, ecodes.KEY_LEFTSHIFT)):
+        uinput.zoom(1)
+        uinput.writes.clear()
+        action()
+        uinput.release()
+        assert uinput.writes[:2] == [(ecodes.KEY_LEFTCTRL, 0), (first, 1)], action.__name__
+
+
+def test_pointer_zoom_does_not_inherit_scroll_leftovers(uinput):
+    from inputland.pointer import ecodes
+
+    uinput.scroll(100 / 120)
+    uinput.zoom(20 / 120)
+    uinput.stop_zoom()
+    uinput.scroll(20 / 120)
+
+    assert (ecodes.REL_WHEEL, 1) not in uinput.writes  # 100 + 20 units would make a wheel click with Ctrl down
+
+
+def test_model_download_with_bad_checksum_is_not_cached(monkeypatch, tmp_path):
+    import io
+
+    from inputland import tracking
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"<html>login</html>"))
+    with pytest.raises(RuntimeError, match="checksum"):
+        tracking.ensure_model()
+    assert not list((tmp_path / "inputland").iterdir())
+
+    monkeypatch.setattr(tracking, "MODEL_SHA256", tracking.hashlib.sha256(b"<html>login</html>").hexdigest())
+    assert tracking.ensure_model().read_bytes() == b"<html>login</html>"

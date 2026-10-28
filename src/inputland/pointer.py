@@ -32,6 +32,7 @@ class VirtualPointer:
         self._pressed_at: float | None = None
         self._wheel = 0.0  # hi-res units not sent yet
         self._notch_units = 0  # hi-res units sent since the last REL_WHEEL click
+        self._zooming = False  # Ctrl held down
 
     def move_to(self, u: float, v: float) -> None:
         """Move to screen position (u, v), each 0..1."""
@@ -40,6 +41,7 @@ class VirtualPointer:
         self._device.syn()
 
     def press(self) -> None:
+        self.stop_zoom()  # a click right after zooming must not be a Ctrl+click
         self._button(ecodes.BTN_LEFT, 1)
         self._pressed_at = time.monotonic()
 
@@ -52,6 +54,7 @@ class VirtualPointer:
         self._pressed_at = None
 
     def right_click(self) -> None:
+        self.stop_zoom()
         self._button(ecodes.BTN_RIGHT, 1)
         time.sleep(0.03)  # same libinput debouncing as `release`
         self._button(ecodes.BTN_RIGHT, 0)
@@ -63,6 +66,7 @@ class VirtualPointer:
         self._shortcut(ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT)
 
     def _shortcut(self, modifier: int, key: int) -> None:
+        self.stop_zoom()
         for code, value in ((modifier, 1), (key, 1), (key, 0), (modifier, 0)):
             self._button(code, value)
 
@@ -81,12 +85,28 @@ class VirtualPointer:
             self._notch_units -= clicks * 120
         self._device.syn()
 
+    def zoom(self, notches: float) -> None:
+        """Ctrl+scroll, which most apps take as zoom; positive zooms in. Ctrl stays down until `stop_zoom`."""
+        # Held rather than tapped per wheel event: a bare Ctrl tap means something else to some desktops.
+        if not self._zooming:
+            self._button(ecodes.KEY_LEFTCTRL, 1)
+            self._zooming = True
+            self._wheel = self._notch_units = 0  # scroll leftovers must not add up to a zoom click, nor back
+        self.scroll(notches)
+
+    def stop_zoom(self) -> None:
+        if self._zooming:
+            self._button(ecodes.KEY_LEFTCTRL, 0)
+            self._zooming = False
+            self._wheel = self._notch_units = 0
+
     def _button(self, button: int, value: int) -> None:
         self._device.write(ecodes.EV_KEY, button, value)
         self._device.syn()
 
     def close(self) -> None:
-        self.release()  # never leave the button stuck down
+        self.release()  # never leave the button or Ctrl stuck down
+        self.stop_zoom()
         self._device.close()
 
     def __enter__(self) -> "VirtualPointer":

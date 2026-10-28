@@ -43,6 +43,12 @@ def devices(monkeypatch):
         def scroll(self, notches):
             self.events.append(("scroll", notches))
 
+        def zoom(self, notches):
+            self.events.append(("zoom", notches))
+
+        def stop_zoom(self):
+            self.events.append("unzoom")
+
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
     for name in ("Camera", "HandTracker", "VirtualPointer"):
@@ -182,6 +188,40 @@ def test_two_open_palms_scroll_with_the_last_driver(devices):
     assert [s.scrolling for s in statuses] == [None, None, *["Right"] * 5, None]
 
 
+def palms(left_x, right_x, y=0.45):
+    return [hand("Left", left_x, y, gesture="Open_Palm"), hand("Right", right_x, y, gesture="Open_Palm")]
+
+
+def _palm_events(events):
+    """Scroll / zoom events as (kind, positive), plus Ctrl let go."""
+    return [e if e == "unzoom" else (e[0], e[1] > 0) for e in events if e == "unzoom" or e[0] in ("scroll", "zoom")]
+
+
+def test_open_palms_spread_zooms_and_lock_out_scrolling(devices):
+    o = point("Right", 0.5, 0.45)
+    one_palm = [palms(0.4, 0.6)[1]]
+    # Anchor at a 0.2 gap, spread, then move up (locked to zoom: no scroll), close in; one palm lets Ctrl go.
+    devices.script = [
+        [o], palms(0.4, 0.6), palms(0.3, 0.7), palms(0.3, 0.7, y=0.2), palms(0.45, 0.55), one_palm, one_palm,
+    ]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=2), statuses.append)
+
+    assert _palm_events(devices.events) == [("zoom", True), ("zoom", True), ("zoom", False), "unzoom"]
+    pairs = [(s.scrolling, s.zooming) for s in statuses if s.scrolling or s.zooming]
+    assert list(dict.fromkeys(pairs)) == [("Right", None), (None, "Right")]  # undecided shows as scrolling
+
+
+def test_open_palms_scrolling_first_does_not_zoom(devices):
+    o = point("Right", 0.5, 0.45)
+    devices.script = [[o], palms(0.4, 0.6), palms(0.4, 0.6, y=0.3), palms(0.2, 0.8, y=0.3)]
+
+    app.run(Settings(engage_frames=1, release_frames=2))
+
+    assert _palm_events(devices.events) == [("scroll", True), ("scroll", True)]
+
+
 def test_settings_reject_filter_values_that_break_smoothing():
     with pytest.raises(ValueError):
         Settings(min_cutoff=0)
@@ -191,3 +231,5 @@ def test_settings_reject_filter_values_that_break_smoothing():
         Settings(pinch_ratio=0)
     with pytest.raises(ValueError):
         Settings(scroll_speed=0)
+    with pytest.raises(ValueError):
+        Settings(zoom_dead_zone=1)

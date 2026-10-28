@@ -48,6 +48,10 @@ class Settings:
     # the palms opened scrolls at scroll_speed wheel clicks per second per frame height beyond it.
     scroll_dead_zone: float = 0.03
     scroll_speed: float = 80.0
+    # Two open palms zoom (Ctrl+wheel): their horizontal gap changing past the dead zone (log of the ratio to the
+    # gap where they opened, ~fraction) zooms at zoom_speed wheel clicks per second per unit beyond it.
+    zoom_dead_zone: float = 0.1
+    zoom_speed: float = 10.0
     preview: bool = False
 
     def __post_init__(self) -> None:
@@ -59,4 +63,8 @@ class Settings:
             raise ValueError(
                 f"need 0 <= scroll_dead_zone < 0.5 and scroll_speed > 0, "
                 f"got {self.scroll_dead_zone} and {self.scroll_speed}"
+            )
+        if not (0 <= self.zoom_dead_zone < 1 and self.zoom_speed > 0):
+            raise ValueError(
+                f"need 0 <= zoom_dead_zone < 1 and zoom_speed > 0, got {self.zoom_dead_zone} and {self.zoom_speed}"
             )

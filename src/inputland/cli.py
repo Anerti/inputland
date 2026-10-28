@@ -30,6 +30,14 @@ def main() -> None:
         "--scroll-dead-zone", type=float, default=defaults.scroll_dead_zone,
         help="hand travel (fraction of frame height) that does not scroll yet",
     )
+    parser.add_argument(
+        "--zoom-speed", type=float, default=defaults.zoom_speed,
+        help="wheel clicks per second per unit of spread (log ratio) while zooming (two open palms apart / together)",
+    )
+    parser.add_argument(
+        "--zoom-dead-zone", type=float, default=defaults.zoom_dead_zone,
+        help="change in the gap between the palms (log ratio, ~fraction) that does not zoom yet",
+    )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
@@ -51,6 +59,8 @@ def main() -> None:
             pinch_ratio=args.pinch_ratio,
             scroll_speed=args.scroll_speed,
             scroll_dead_zone=args.scroll_dead_zone,
+            zoom_speed=args.zoom_speed,
+            zoom_dead_zone=args.zoom_dead_zone,
             preview=args.preview,
         )
         # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.

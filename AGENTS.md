@@ -34,8 +34,9 @@ Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `
 - **A pinching driver keeps control** even though MediaPipe no longer calls it `Pointing_Up`. The last driver can also take control back by pinching (a slow pinch passes through unrecognized poses), until no hand is in view.
 - **✌️ by the last driver is a right click**, once per ✌️, and only after that hand pointed: a stray ✌️ does nothing.
 - **Two open palms scroll**, joystick style: the last driver's hand, moved up/down past a dead zone from where the palms opened, sets the scroll speed. `VirtualPointer.scroll` sends `REL_WHEEL_HI_RES` for smooth scrolling and a `REL_WHEEL` click per 120 hi-res units for clients that only read that.
+- **Two open palms spread apart / together zoom** (Ctrl+wheel, Ctrl held until the palms close or a click / key is sent, so it never turns into Ctrl+click), on the log ratio of their horizontal gap to where they opened. Axis lock: whichever of scroll and zoom leaves its dead zone first owns the gesture until the palms close.
 - **`--preview` disables the HUD**: OpenCV's window segfaults next to GTK.
-- **Model URL is pinned** (`float16/1`), not `latest`, so the gesture set cannot change underneath. Downloads go to a `.part` file then rename atomically.
+- **Model URL is pinned** (`float16/1`), not `latest`, so the gesture set cannot change underneath. Downloads must match `MODEL_SHA256` (a captive-portal page must not get cached), then go to a `.part` file and rename atomically; bump both together.
 - **HUD clicks pass through** via an empty input region; segment width is fixed (`NAME_CHARS`) so the overlay never resizes.
 - **`HandTracker` runs on the GPU delegate**, falling back to the CPU: on a throttled CPU (battery, power-saver) inference takes 30–60 ms, over the 33 ms frame budget, and the cursor stutters.
 - **`HandTracker.detect` forces strictly increasing timestamps**: MediaPipe VIDEO mode rejects repeats.

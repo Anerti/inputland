@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import sys
@@ -21,6 +22,7 @@ MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/"
     "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"  # pinned: "latest" could change gestures under us
 )
+MODEL_SHA256 = "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
 
 # MediaPipe hand landmarks
 WRIST = 0
@@ -47,8 +49,13 @@ def ensure_model() -> Path:
     if not path.exists():
         log.info("downloading gesture model to %s", path)
         cache.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(MODEL_URL, timeout=30) as response:  # a stalled download fails instead of hanging
+            data = response.read()
+        # A captive portal or proxy can answer with a page instead; caching it would break every later start.
+        if hashlib.sha256(data).hexdigest() != MODEL_SHA256:
+            raise RuntimeError(f"gesture model download from {MODEL_URL} failed its checksum; check the network and retry")
         tmp = path.with_suffix(".part")
-        urllib.request.urlretrieve(MODEL_URL, tmp)
+        tmp.write_bytes(data)
         tmp.rename(path)  # atomic: an interrupted download never looks like a valid model
     return path
 

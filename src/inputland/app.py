@@ -34,6 +34,7 @@ class Status:
     scrolling: str | None = None  # side whose hand scrolls (two open palms)
     copied: str | None = None  # side holding the 👍 that copied
     pasted: str | None = None  # side holding the 👎 that pasted
+    zooming: str | None = None  # side of the last driver while two open palms zoom
 
 
 def run(
@@ -59,13 +60,14 @@ def run(
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
             "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
-            "open both palms and move the pointing hand up or down to scroll"
+            "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom"
         )
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
         last_driver: str | None = None
         last_status = None
-        scroll_anchor = 0.0
+        scroll_anchor = spread_anchor = 0.0
+        palm_axis: str | None = None  # "scroll" or "zoom" once the open palms leave a dead zone
         last_frame = time.monotonic()
 
         for frame in camera.frames():
@@ -125,27 +127,37 @@ def run(
                 log.debug("paste")
                 pointer.paste()
 
-            # Two open palms scroll, joystick style: the last driver's hand, above where the palms opened, scrolls up.
+            # Two open palms, joystick style: the last driver's hand, above where the palms opened, scrolls up;
+            # palms spread apart zoom in. Axis lock: the first to leave its dead zone owns it until the palms close.
             mover = next(iter(owned), None)
             both_palms = (
                 mover is not None and len(hands) == 2
                 and all(is_gesture(h, "Open_Palm", settings.min_gesture_score) for h in hands)
             )
-            was_scrolling = palms.state
+            was_palms = palms.state
             if palms.update(both_palms) and both_palms:
-                y = mover.landmarks[INDEX_MCP][1]
-                if not was_scrolling:
-                    log.debug("scrolling")
-                    scroll_anchor = y
-                offset = scroll_anchor - y  # image y grows downward
-                excess = max(abs(offset) - settings.scroll_dead_zone, 0.0)
-                if excess:
-                    pointer.scroll(math.copysign(excess, offset) * settings.scroll_speed * dt)
+                y, spread = mover.landmarks[INDEX_MCP][1], _spread(hands)
+                if not was_palms:
+                    log.debug("palms open")
+                    scroll_anchor, spread_anchor, palm_axis = y, spread, None
+                scroll = _excess(scroll_anchor - y, settings.scroll_dead_zone)  # image y grows downward
+                zoom = _excess(math.log(spread / spread_anchor), settings.zoom_dead_zone)
+                if palm_axis is None and (scroll or zoom):
+                    palm_axis = "scroll" if scroll else "zoom"
+                    log.debug("palms %s", palm_axis)
+                if palm_axis == "scroll" and scroll:
+                    pointer.scroll(scroll * settings.scroll_speed * dt)
+                elif palm_axis == "zoom" and zoom:
+                    pointer.zoom(zoom * settings.zoom_speed * dt)
+            elif was_palms and not palms.state and palm_axis == "zoom":
+                pointer.stop_zoom()
 
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
-                pinch.state, owner if victory.state else None, edge, owner if palms.state else None,
+                pinch.state, owner if victory.state else None, edge,
+                owner if palms.state and palm_axis != "zoom" else None,
                 owner if thumb_up.state else None, owner if thumb_down.state else None,
+                owner if palms.state and palm_axis == "zoom" else None,
             )
             if status != last_status:
                 on_status(status)
@@ -159,6 +171,17 @@ def _started(debounce: Debounce, raw: bool) -> bool:
     """True on the frame `debounce` turns on."""
     was = debounce.state
     return debounce.update(raw) and not was
+
+
+def _excess(offset: float, dead_zone: float) -> float:
+    """How far `offset` goes past `dead_zone`, keeping its sign; 0 inside it."""
+    return math.copysign(max(abs(offset) - dead_zone, 0.0), offset)
+
+
+def _spread(hands: list[Hand]) -> float:
+    """Horizontal gap between two hands; the floor keeps the zoom ratio finite if they cross."""
+    a, b = (h.landmarks[INDEX_MCP][0] for h in hands)
+    return max(abs(a - b), 0.05)
 
 
 def _show_preview(frame: np.ndarray, hands: list[Hand], active: bool, settings: Settings) -> bool:

@@ -42,6 +42,7 @@ ABSENT = "Not seen"
 IGNORED = "-"  # a pose that does nothing
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Scrolling",
+    "Zooming",
 )
 NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
 
@@ -165,6 +166,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "Paste", "driving"
     if status.scrolling:  # both hands make the gesture; highlight the one that scrolls
         return "Scrolling", "driving" if side == status.scrolling else "seen"
+    if status.zooming:
+        return "Zooming", "driving" if side == status.zooming else "seen"
     if side == status.driver:
         return "Pinch" if status.pressed else "At edge" if status.edge else "Moving", "driving"
     gesture = dict(status.hands).get(side)
