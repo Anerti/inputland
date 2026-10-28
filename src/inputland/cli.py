@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import sys
 
 from inputland.app import run
@@ -54,6 +55,9 @@ def main() -> None:
         )
         # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.
         if args.no_hud or args.preview:
+            run(settings)
+        elif not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+            logging.info("no display (TTY?): running without the HUD")
             run(settings)
         else:
             from inputland.hud import Hud  # loads GTK; only needed with the HUD

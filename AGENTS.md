@@ -27,10 +27,10 @@ Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `
 ## Gotchas (do not "fix" these)
 
 - **`sys.modules.setdefault("sounddevice", None)` in `tracking.py`** must run before `import mediapipe`. Otherwise PipeWire's JACK client sets `RLIMIT_RTTIME` to 0 and the kernel SIGKILLs the process. Guarded by `tests/test_tracking_import.py`.
-- **Handedness is swapped** (`OTHER_SIDE`): frames are mirrored, so MediaPipe reports the opposite hand. `Hand.side` is the user's real hand.
+- **Handedness is swapped** (`OTHER_SIDE`): frames are mirrored, so MediaPipe reports the opposite hand. `Hand.side` is the user's real hand. When MediaPipe names both hands the same, `detect` relabels them by x position.
 - **Cursor anchor is `INDEX_MCP`** (base of the index finger), not the fingertip: steadier, and stays put while pinching.
 - **Filters reset when the driving hand changes**, so the cursor jumps instead of gliding between hands.
-- **A pinch by the driver holds the left button**: down when it closes, up when it opens, so a quick pinch clicks and a held one drags. `VirtualPointer.release` keeps at least 30 ms after the press because libinput's button debouncing drops closer ones, and `close` releases a held button.
+- **A pinch by the driver holds the left button**: down when it closes, up when it opens, so a quick pinch clicks and a held one drags. A hand lost for a few frames keeps the button while the cursor stays engaged; a switch to the other hand releases it before the cursor moves. `VirtualPointer.release` keeps at least 30 ms after the press because libinput's button debouncing drops closer ones, and `close` releases a held button.
 - **A pinching driver keeps control** even though MediaPipe no longer calls it `Pointing_Up`. The last driver can also take control back by pinching (a slow pinch passes through unrecognized poses), until no hand is in view.
 - **✌️ by the last driver is a right click**, once per ✌️, and only after that hand pointed: a stray ✌️ does nothing.
 - **Two open palms scroll**, joystick style: the last driver's hand, moved up/down past a dead zone from where the palms opened, sets the scroll speed. `VirtualPointer.scroll` sends `REL_WHEEL_HI_RES` for smooth scrolling and a `REL_WHEEL` click per 120 hi-res units for clients that only read that.

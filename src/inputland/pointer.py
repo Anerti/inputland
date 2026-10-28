@@ -17,7 +17,11 @@ class VirtualPointer:
         capabilities = {
             ecodes.EV_ABS: [(ecodes.ABS_X, axis), (ecodes.ABS_Y, axis)],
             # Without a button, libinput does not classify the device as a pointer and ignores it.
-            ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT],
+            # Ctrl+Insert / Shift+Insert copy and paste: Insert is layout independent, and unlike Ctrl+C it does not
+            # interrupt the program running in a terminal.
+            ecodes.EV_KEY: [
+                ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.KEY_LEFTCTRL, ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT,
+            ],
             ecodes.EV_REL: [ecodes.REL_WHEEL, ecodes.REL_WHEEL_HI_RES],
         }
         try:
@@ -51,6 +55,16 @@ class VirtualPointer:
         self._button(ecodes.BTN_RIGHT, 1)
         time.sleep(0.03)  # same libinput debouncing as `release`
         self._button(ecodes.BTN_RIGHT, 0)
+
+    def copy(self) -> None:
+        self._shortcut(ecodes.KEY_LEFTCTRL, ecodes.KEY_INSERT)
+
+    def paste(self) -> None:
+        self._shortcut(ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT)
+
+    def _shortcut(self, modifier: int, key: int) -> None:
+        for code, value in ((modifier, 1), (key, 1), (key, 0), (modifier, 0)):
+            self._button(code, value)
 
     def scroll(self, notches: float) -> None:
         """Scroll by `notches` wheel clicks, fractions included; positive scrolls up."""

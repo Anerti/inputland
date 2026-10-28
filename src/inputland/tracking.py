@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 # MediaPipe imports sounddevice for audio tasks we don't use. Its PortAudio init loads
@@ -91,6 +91,10 @@ class HandTracker:
                     landmarks=tuple((lm.x, lm.y) for lm in landmarks),
                 )
             )
+        if len(hands) == 2 and hands[0].side == hands[1].side:
+            # MediaPipe sometimes names both hands the same; on the mirrored frame the left hand is on the left.
+            hands.sort(key=lambda h: h.landmarks[INDEX_MCP][0])
+            hands = [replace(h, side=side) for h, side in zip(hands, ("Left", "Right"))]
         return hands
 
     def close(self) -> None:

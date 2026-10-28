@@ -17,6 +17,8 @@ except (ImportError, RuntimeError):  # no GTK 4 or gtk4-layer-shell on this mach
         (Status("Right", (("Left", "Pointing_Up"), ("Right", "None")), pressed=True), "Pointing", "Pinch"),
         (Status("Right", (("Right", "Pointing_Up"),), edge=True), "Not seen", "At edge"),
         (Status(None, (("Right", "Victory"),), right_click="Right"), "Not seen", "Right click"),
+        (Status(None, (("Right", "Thumb_Up"),), copied="Right"), "Not seen", "Copy"),
+        (Status(None, (("Right", "Thumb_Down"),), pasted="Right"), "Not seen", "Paste"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), "Scrolling", "Scrolling"),
     ],
 )

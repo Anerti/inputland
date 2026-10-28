@@ -3,16 +3,9 @@ from math import dist
 from inputland.tracking import INDEX_TIP, MIDDLE_MCP, THUMB_TIP, WRIST, Hand
 
 
-def is_pointing(hand: Hand, min_score: float) -> bool:
-    return hand.gesture == "Pointing_Up" and hand.score >= min_score
-
-
-def is_victory(hand: Hand, min_score: float) -> bool:
-    return hand.gesture == "Victory" and hand.score >= min_score
-
-
-def is_palm(hand: Hand, min_score: float) -> bool:
-    return hand.gesture == "Open_Palm" and hand.score >= min_score
+def is_gesture(hand: Hand, gesture: str, min_score: float) -> bool:
+    """MediaPipe recognized `gesture` (e.g. "Pointing_Up", "Victory", "Open_Palm") with at least `min_score`."""
+    return hand.gesture == gesture and hand.score >= min_score
 
 
 def is_pinching(hand: Hand, ratio: float) -> bool:
@@ -27,7 +20,8 @@ def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float, p
     A pinching driver keeps control too: MediaPipe stops calling it `Pointing_Up`.
     """
     pointing = [
-        h for h in hands if is_pointing(h, min_score) or (h.side == driver and is_pinching(h, pinch_ratio))
+        h for h in hands
+        if is_gesture(h, "Pointing_Up", min_score) or (h.side == driver and is_pinching(h, pinch_ratio))
     ]
     return next((h for h in pointing if h.side == driver), pointing[0] if pointing else None)
 

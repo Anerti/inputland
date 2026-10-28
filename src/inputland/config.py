@@ -37,6 +37,8 @@ class Settings:
     release_frames: int = 5
     # Frames a pinch must hold / stay open to press / release: shorter than the above so double clicks fit.
     pinch_frames: int = 2
+    # Frames a 👎 must hold before it pastes: longer than engage_frames, a stray paste does more harm than a copy.
+    paste_frames: int = 9
     # One Euro filter, in screen units (0..1): lower min_cutoff = less jitter, higher beta = less lag.
     min_cutoff: float = 1.0
     beta: float = 10.0

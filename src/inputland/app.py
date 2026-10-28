@@ -11,7 +11,9 @@ import numpy as np
 from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_palm, is_pinching, is_victory, pick_pointer_hand
+from inputland.gestures import (
+    Debounce, is_gesture, is_pinching, pick_pointer_hand,
+)
 from inputland.pointer import VirtualPointer
 from inputland.tracking import INDEX_MCP, Hand, HandTracker, ensure_model
 
@@ -30,6 +32,8 @@ class Status:
     right_click: str | None = None  # side holding the ✌️ that right clicked
     edge: bool = False  # cursor pinned to a screen edge: the hand is outside the region
     scrolling: str | None = None  # side whose hand scrolls (two open palms)
+    copied: str | None = None  # side holding the 👍 that copied
+    pasted: str | None = None  # side holding the 👎 that pasted
 
 
 def run(
@@ -50,9 +54,11 @@ def run(
         pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
         victory = Debounce(settings.engage_frames, settings.release_frames)
         palms = Debounce(settings.engage_frames, settings.release_frames)
+        thumb_up = Debounce(settings.engage_frames, settings.release_frames)
+        thumb_down = Debounce(settings.paste_frames, settings.release_frames)
         log.info(
             "running; point with either index finger to move the cursor, pinch to click, hold the pinch to drag, "
-            "raise the middle finger too to right click, "
+            "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
             "open both palms and move the pointing hand up or down to scroll"
         )
         driver: str | None = None
@@ -83,14 +89,22 @@ def run(
                     smooth_x.reset()
                     smooth_y.reset()
                     driver = last_driver = hand.side
+                    if pinch.state:  # a held button must not drop where the new hand is
+                        log.debug("left button up")
+                        pointer.release()
+                        pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
                 # Base of the index finger: steadier than the fingertip, and it does not move while pinching.
                 u, v = settings.region.normalize(*hand.landmarks[INDEX_MCP])
                 edge = u in (0.0, 1.0) or v in (0.0, 1.0)  # normalize clamps to the edges
                 pointer.move_to(smooth_x(u, now), smooth_y(v, now))
 
             # Only the driver's pinch holds the left button: down on close, up on open, so a quick pinch clicks.
+            # A hand lost for a few frames (motion blur) keeps the button until the cursor lets go too.
             was_pinching = pinch.state
-            pinching = driver is not None and hand is not None and is_pinching(hand, settings.pinch_ratio)
+            if hand is None:
+                pinching = driver is not None and was_pinching
+            else:
+                pinching = driver is not None and is_pinching(hand, settings.pinch_ratio)
             if pinch.update(pinching) != was_pinching:
                 log.debug("left button %s", "up" if was_pinching else "down")
                 if was_pinching:
@@ -98,18 +112,24 @@ def run(
                 else:
                     pointer.press()
 
-            # ✌️ by the last driver right clicks once; it no longer points, so the cursor stays where it aimed.
-            was_victory = victory.state
+            # ✌️ / 👍 / 👎 by the last driver fire once each; it no longer points, so the cursor stays where it aimed.
             owner = driver or last_driver
-            if victory.update(any(h.side == owner and is_victory(h, settings.min_gesture_score) for h in hands)):
-                if not was_victory:
-                    log.debug("right click")
-                    pointer.right_click()
+            owned = [h for h in hands if h.side == owner]
+            if _started(victory, any(is_gesture(h, "Victory", settings.min_gesture_score) for h in owned)):
+                log.debug("right click")
+                pointer.right_click()
+            if _started(thumb_up, any(is_gesture(h, "Thumb_Up", settings.min_gesture_score) for h in owned)):
+                log.debug("copy")
+                pointer.copy()
+            if _started(thumb_down, any(is_gesture(h, "Thumb_Down", settings.min_gesture_score) for h in owned)):
+                log.debug("paste")
+                pointer.paste()
 
             # Two open palms scroll, joystick style: the last driver's hand, above where the palms opened, scrolls up.
-            mover = next((h for h in hands if h.side == owner), None)
+            mover = next(iter(owned), None)
             both_palms = (
-                mover is not None and len(hands) == 2 and all(is_palm(h, settings.min_gesture_score) for h in hands)
+                mover is not None and len(hands) == 2
+                and all(is_gesture(h, "Open_Palm", settings.min_gesture_score) for h in hands)
             )
             was_scrolling = palms.state
             if palms.update(both_palms) and both_palms:
@@ -125,6 +145,7 @@ def run(
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
                 pinch.state, owner if victory.state else None, edge, owner if palms.state else None,
+                owner if thumb_up.state else None, owner if thumb_down.state else None,
             )
             if status != last_status:
                 on_status(status)
@@ -132,6 +153,12 @@ def run(
 
             if settings.preview and not _show_preview(frame, hands, driver is not None, settings):
                 break
+
+
+def _started(debounce: Debounce, raw: bool) -> bool:
+    """True on the frame `debounce` turns on."""
+    was = debounce.state
+    return debounce.update(raw) and not was
 
 
 def _show_preview(frame: np.ndarray, hands: list[Hand], active: bool, settings: Settings) -> bool:

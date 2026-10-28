@@ -34,6 +34,12 @@ def devices(monkeypatch):
         def right_click(self):
             self.events.append("right")
 
+        def copy(self):
+            self.events.append("copy")
+
+        def paste(self):
+            self.events.append("paste")
+
         def scroll(self, notches):
             self.events.append(("scroll", notches))
 
@@ -79,6 +85,26 @@ def test_hand_leaving_mid_drag_releases_the_button(devices):
     assert [e for e in devices.events if isinstance(e, str)] == ["down", "up"]
 
 
+def test_switching_hands_mid_drag_releases_before_moving(devices):
+    o, p, other = point("Left", 0.3, 0.3), pinch("Left", 0.3, 0.3), point("Right", 0.7, 0.7)
+    # The left hand drags while the right one points, then the left leaves: the drag must not end at the right hand.
+    devices.script = [[o], [p, other], [other], [other]]
+
+    app.run(Settings(engage_frames=1, release_frames=5, pinch_frames=1))
+
+    labels = [e if isinstance(e, str) else "move" for e in devices.events]
+    assert labels == ["move", "move", "down", "up", "move", "move"]
+
+
+def test_drag_survives_a_short_tracking_dropout(devices):
+    o, p, moved = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45), pinch("Right", 0.75, 0.7)
+    devices.script = [[o], [p], [p], [], [], [moved]]
+
+    app.run(Settings(engage_frames=1, release_frames=5, pinch_frames=2))
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["down"]
+
+
 def test_victory_right_clicks_once_after_pointing(devices):
     o, v = point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="Victory")
     # A ✌️ before pointing and the other hand's ✌️ do nothing; a held ✌️ clicks once.
@@ -88,6 +114,19 @@ def test_victory_right_clicks_once_after_pointing(devices):
 
     labels = [e if isinstance(e, str) else "move" for e in devices.events]
     assert labels == ["move", "right", "move", "right"]
+
+
+def test_thumbs_up_copies_and_held_thumbs_down_pastes_after_pointing(devices):
+    o = point("Right", 0.5, 0.45)
+    up, down = hand("Right", 0.5, 0.45, gesture="Thumb_Up"), hand("Right", 0.5, 0.45, gesture="Thumb_Down")
+    # A 👍 before pointing and the other hand's 👍 do nothing; a held 👍 copies once; a 1-frame 👎 is too short.
+    devices.script = [[up], [o], [hand("Left", 0.2, 0.2, gesture="Thumb_Up")], [up], [up], [down], [o], [down], [down]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, paste_frames=2), statuses.append)
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["copy", "paste"]
+    assert [(s.copied, s.pasted) for s in statuses if s.copied or s.pasted] == [("Right", None), (None, "Right")]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):

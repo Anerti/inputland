@@ -5,7 +5,7 @@ from hands import pinch, point
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_pinching, is_pointing, pick_pointer_hand
+from inputland.gestures import Debounce, is_gesture, is_pinching, pick_pointer_hand
 from inputland.tracking import Hand
 
 
@@ -46,11 +46,11 @@ def test_debounce_needs_consecutive_frames():
     assert [d.update(x) for x in [False, True, False, False]] == [True, True, True, False]
 
 
-def test_is_pointing_checks_label_and_score():
+def test_is_gesture_checks_label_and_score():
     lm = ((0.0, 0.0),) * 21
-    assert is_pointing(Hand("Right", "Pointing_Up", 0.9, lm), 0.5)
-    assert not is_pointing(Hand("Right", "Pointing_Up", 0.3, lm), 0.5)
-    assert not is_pointing(Hand("Right", "Open_Palm", 0.9, lm), 0.5)
+    assert is_gesture(Hand("Right", "Pointing_Up", 0.9, lm), "Pointing_Up", 0.5)
+    assert not is_gesture(Hand("Right", "Pointing_Up", 0.3, lm), "Pointing_Up", 0.5)
+    assert not is_gesture(Hand("Right", "Open_Palm", 0.9, lm), "Pointing_Up", 0.5)
 
 
 def test_pick_pointer_hand_accepts_either_hand_and_keeps_the_driver():
@@ -101,14 +101,15 @@ def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
     from inputland import tracking
 
     seen = []
+    xs = [0.5]  # one hand per x
 
     class Recognizer:
         def recognize_for_video(self, image, ts):
             seen.append(ts)
             return NS(
-                handedness=[[NS(category_name="Left")]],
-                gestures=[[NS(category_name="Pointing_Up", score=0.9)]],
-                hand_landmarks=[[NS(x=0.5, y=0.5)] * 21],
+                handedness=[[NS(category_name="Left")]] * len(xs),
+                gestures=[[NS(category_name="Pointing_Up", score=0.9)]] * len(xs),
+                hand_landmarks=[[NS(x=x, y=0.5)] * 21 for x in xs],
             )
 
     monkeypatch.setattr(tracking.vision.GestureRecognizer, "create_from_options", lambda options: Recognizer())
@@ -118,6 +119,9 @@ def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
     tracker.detect(frame, 100)
     assert hand.side == "Right"  # mirrored frames: MediaPipe names the opposite hand
     assert seen == [100, 101]
+
+    xs[:] = [0.7, 0.2]  # both named the same: the hand on the left of the mirrored frame is the left one
+    assert [(h.side, h.landmarks[0][0]) for h in tracker.detect(frame, 200)] == [("Left", 0.2), ("Right", 0.7)]
 
 
 def test_pointer_without_uinput_access_points_to_the_readme(monkeypatch):

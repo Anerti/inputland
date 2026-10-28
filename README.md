@@ -4,8 +4,9 @@ Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland),
 
 **Current scope:** point with either index finger (☝️) to move the cursor. Any other pose releases it. If both hands point, the hand already moving the cursor keeps it.
 While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag. Raise your middle finger too (✌️) to right click.
+Thumbs up (👍) copies and thumbs down (👎, held a moment longer) pastes, with the hand that was pointing. They send Ctrl+Insert and Shift+Insert, which most apps take as copy and paste and which, unlike Ctrl+C, do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
 To scroll, open both palms (🖐️🖐️) and move the hand that was pointing up or down from where it started: the further you move it, the faster it scrolls. Close either hand to stop.
-A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Scrolling`, `At edge` when the hand is outside the mapped region) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
+A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Scrolling`, `At edge` when the hand is outside the mapped region) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
 
 ## Setup
 
@@ -31,7 +32,7 @@ sudo modprobe uinput
 ```sh
 uv run inputland            # run with the HUD (Ctrl+C to quit)
 uv run inputland --preview  # camera view instead of the HUD: green box = active, orange = idle (q/Esc quits)
-uv run inputland --no-hud   # headless, e.g. on X11 or the TTY
+uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
 ```
 
 ### Calibration
@@ -60,10 +61,10 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 |---|---|
 | `camera.py` | OpenCV V4L2 capture, mirrored frames |
 | `tracking.py` | MediaPipe `GestureRecognizer` → `Hand` (side, gesture, 21 landmarks); model download |
-| `gestures.py` | Pose rules (`is_pointing`, `is_pinching`, `is_victory`, `is_palm`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
+| `gestures.py` | Pose rules (`is_gesture`, `is_pinching`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
 | `filters.py` | One Euro filter (jitter vs. lag) |
 | `config.py` | `Settings`, `Region` (camera box → screen) |
-| `pointer.py` | uinput absolute pointer (evdev) |
+| `pointer.py` | uinput absolute pointer (evdev), plus the copy/paste keys |
 | `app.py` | Main loop wiring the above, calibration preview |
 | `hud.py` | GTK4 layer-shell overlay; GTK owns the main thread, the loop runs in a worker thread and sends `Status` updates via `GLib.idle_add` |
 | `cli.py` | Argument parsing, logging, exit codes |
