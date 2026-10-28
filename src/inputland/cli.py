@@ -38,6 +38,10 @@ def main() -> None:
         "--zoom-dead-zone", type=float, default=defaults.zoom_dead_zone,
         help="change in the gap between the palms (log ratio, ~fraction) that does not zoom yet",
     )
+    parser.add_argument(
+        "--swipe-distance", type=float, default=defaults.swipe_distance,
+        help="sideways travel (fraction of frame width) of one open palm that switches workspace",
+    )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
@@ -61,6 +65,7 @@ def main() -> None:
             scroll_dead_zone=args.scroll_dead_zone,
             zoom_speed=args.zoom_speed,
             zoom_dead_zone=args.zoom_dead_zone,
+            swipe_distance=args.swipe_distance,
             preview=args.preview,
         )
         # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.

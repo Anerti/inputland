@@ -7,6 +7,7 @@ While pointing, touch your thumb to your index fingertip (🤏) to left click; o
 Hold 🤟 or 🤘 (index and pinky out, thumb either way) for about a second, with the hand that was pointing, to close the focused window: `hyprctl dispatch` on Hyprland (`hl.dsp.window.close()`, or `killactive` before its Lua config), Alt+F4 elsewhere, nothing on the TTY.
 Thumbs up (👍) copies and thumbs down (👎, held a moment longer) pastes, with the hand that was pointing. They send Ctrl+Insert and Shift+Insert, which most apps take as copy and paste and which, unlike Ctrl+C, do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
 To scroll, open both palms (🖐️🖐️) and move the hand that was pointing up or down from where it started: the further you move it, the faster it scrolls. Spread the open palms apart to zoom in, bring them together to zoom out (Ctrl+wheel, so most apps zoom around the cursor); the further, the faster. Whichever starts first, scroll or zoom, keeps the gesture until you close either hand to stop.
+Swipe one open palm (🖐️) quickly left or right, with the hand that was pointing, to go to the next or previous workspace, like Hyprland's touchpad swipe (Hyprland only).
 Make a fist (✊) with either hand to pause: the hands are ignored, so you can gesture freely, until you open a palm (🖐️) to resume.
 A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `At edge` when the hand is outside the mapped region, `Paused`) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
 
@@ -20,12 +21,14 @@ uv run inputland --preview # first run downloads the gesture model (~8 MB) to ~/
 
 ### Permissions
 
-The cursor is driven by a kernel virtual device, so your user needs write access to `/dev/uinput`:
+The cursor is driven by a kernel virtual device, so your user needs write access to `/dev/uinput`.
+Use a group of its own, not `input`: that one can also read every keyboard, so any program you run could log your keys.
 
 ```sh
-echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' \
+sudo groupadd -f uinput
+echo 'KERNEL=="uinput", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"' \
   | sudo tee /etc/udev/rules.d/99-uinput.rules
-sudo usermod -aG input "$USER"   # then log out and back in
+sudo usermod -aG uinput "$USER"   # then log out and back in
 sudo modprobe uinput
 ```
 
@@ -49,6 +52,7 @@ uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the
 | `--scroll-dead-zone` | `0.03` | Hand travel (fraction of frame height) that does not scroll yet. Raise if it scrolls while you hold still. |
 | `--zoom-speed` | `10` | Wheel clicks per second for each unit (log ratio) the gap between the palms changes past the dead zone. |
 | `--zoom-dead-zone` | `0.1` | Change in the gap between the palms (log ratio, about a fraction: 0.1 is ~10%) that does not zoom yet. Raise if scrolling turns into zooming. |
+| `--swipe-distance` | `0.25` | Sideways travel of one open palm (fraction of the frame width), within about a third of a second, that switches workspace. Lower if swipes are missed, raise if a wave switches workspace. |
 | `--camera N` | `0` | Use `/dev/videoN`. |
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 

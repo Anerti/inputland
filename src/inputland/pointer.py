@@ -76,21 +76,21 @@ class VirtualPointer:
         # Hyprland binds no key to closing by default (Omarchy uses Super+W), so ask it directly.
         if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
             self.stop_zoom()
-            # Lua config (Hyprland 0.56+) first, then the classic dispatcher; each answers "ok" only on success.
-            for dispatcher in ("hl.dsp.window.close()", "killactive"):
-                # A missing or stuck hyprctl must not stop or freeze the loop.
-                try:
-                    done = subprocess.run(["hyprctl", "dispatch", dispatcher], capture_output=True, text=True, timeout=2)
-                except (OSError, subprocess.TimeoutExpired) as e:
-                    log.warning("hyprctl could not close the window: %s", e)
-                    return
-                if done.stdout.strip() == "ok":
-                    return
-            log.warning("hyprctl could not close the window: %s", (done.stdout + done.stderr).strip())
+            _hyprctl("close the window", "hl.dsp.window.close()", "killactive")
         elif os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"):
             self._shortcut(ecodes.KEY_LEFTALT, ecodes.KEY_F4)
         else:  # on the Linux console Alt+F4 switches to tty4
             log.warning("no window to close outside a graphical session")
+
+    def switch_workspace(self, step: int) -> None:
+        """Go to the next (`step` 1) or previous (-1) workspace with windows; Hyprland only."""
+        # Other desktops bind no common key to it.
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            log.warning("switching workspace needs Hyprland")
+            return
+        self.stop_zoom()
+        workspace = f"e{step:+d}"
+        _hyprctl("switch workspace", f'hl.dsp.focus({{ workspace = "{workspace}" }})', f"workspace {workspace}")
 
     def _shortcut(self, modifier: int, key: int) -> None:
         self.stop_zoom()
@@ -141,3 +141,18 @@ class VirtualPointer:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+def _hyprctl(action: str, *dispatchers: str) -> None:
+    """Run the first of `dispatchers` Hyprland accepts, logging a warning that it could not `action` otherwise."""
+    # Lua config (Hyprland 0.56+) first, then the classic dispatcher; each answers "ok" only on success.
+    for dispatcher in dispatchers:
+        # A missing or stuck hyprctl must not stop or freeze the loop.
+        try:
+            done = subprocess.run(["hyprctl", "dispatch", dispatcher], capture_output=True, text=True, timeout=2)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            log.warning("hyprctl could not %s: %s", action, e)
+            return
+        if done.stdout.strip() == "ok":
+            return
+    log.warning("hyprctl could not %s: %s", action, (done.stdout + done.stderr).strip())

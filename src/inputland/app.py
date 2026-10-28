@@ -2,6 +2,7 @@ import logging
 import math
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -68,7 +69,7 @@ def run(
             "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
             "hold 🤟 to close the window, "
             "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom; "
-            "make a fist to pause, open a palm to resume"
+            "swipe one open palm left or right to switch workspace; make a fist to pause, open a palm to resume"
         )
         driver: str | None = None
         # Survives a release: a slow pinch passes through unrecognized poses, then takes control back.
@@ -77,9 +78,11 @@ def run(
         scroll_anchor = spread_anchor = 0.0
         palm_axis: str | None = None  # "scroll" or "zoom" once the open palms leave a dead zone
         paused = False
+        swipe: deque[tuple[int, float]] = deque()  # (frame number, x) of the last driver's lone open palm
+        swipe_from = 0  # first frame number past the cooldown
         last_frame = time.monotonic()
 
-        for frame in camera.frames():
+        for n, frame in enumerate(camera.frames()):
             if stop is not None and stop.is_set():
                 break
             now = time.monotonic()
@@ -108,6 +111,7 @@ def run(
                     smooth_x.reset()
                     smooth_y.reset()
                     driver = last_driver = hand.side
+                    swipe.clear()  # the other hand's palm positions are not a swipe of this one
                     if pinch.state:  # a held button must not drop where the new hand is
                         log.debug("left button up")
                         pointer.release()
@@ -172,12 +176,29 @@ def run(
             elif was_palms and not palms.state and palm_axis == "zoom":
                 pointer.stop_zoom()
 
+            # One open palm of the last driver swiped sideways switches workspace. Frames without it add nothing,
+            # so a blurred, unrecognized pose does not break a swipe; positions older than swipe_frames drop out.
+            if (
+                n >= swipe_from and mover is not None and len(hands) == 1
+                and is_gesture(mover, "Open_Palm", settings.min_gesture_score)
+            ):
+                swipe.append((n, mover.landmarks[INDEX_MCP][0]))
+            while swipe and swipe[0][0] <= n - settings.swipe_frames:
+                swipe.popleft()
+            if swipe and abs(travel := swipe[-1][1] - swipe[0][1]) >= settings.swipe_distance:
+                # Like Hyprland's touchpad swipe: the palm drags the workspaces, so swiping left shows the next one.
+                log.debug("swipe %s", "right" if travel > 0 else "left")
+                pointer.switch_workspace(-1 if travel > 0 else 1)
+                swipe.clear()
+                swipe_from = n + settings.swipe_cooldown_frames
+
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
-                pinch.state, owner if victory.state else None, edge,
-                owner if palms.state and palm_axis != "zoom" else None,
-                owner if thumb_up.state else None, owner if thumb_down.state else None,
-                owner if palms.state and palm_axis == "zoom" else None, paused, owner if love.state else None,
+                pressed=pinch.state, right_click=owner if victory.state else None, edge=edge,
+                scrolling=owner if palms.state and palm_axis != "zoom" else None,
+                copied=owner if thumb_up.state else None, pasted=owner if thumb_down.state else None,
+                zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused,
+                closed=owner if love.state else None,
             )
             if status != last_status:
                 on_status(status)

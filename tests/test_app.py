@@ -43,6 +43,9 @@ def devices(monkeypatch):
         def close_window(self):
             self.events.append("close")
 
+        def switch_workspace(self, step):
+            self.events.append(("workspace", step))
+
         def scroll(self, notches):
             self.events.append(("scroll", notches))
 
@@ -148,6 +151,39 @@ def test_held_love_closes_once_after_pointing(devices):
 
     assert [e for e in devices.events if isinstance(e, str)] == ["close"]
     assert [s.closed for s in statuses if s.closed] == ["Right"]
+
+
+def test_one_open_palm_swipe_switches_workspace_after_pointing(devices):
+    def palm(x):
+        return [hand("Right", x, 0.45, gesture="Open_Palm")]
+
+    # A swipe before pointing does nothing; a left swipe goes to the next workspace, and swinging back right during
+    # the cooldown does not undo it; a slow drift does nothing; a right swipe goes back; two palms never swipe, nor
+    # does a palm next to the other hand (two palms opening, before MediaPipe sees the second one as a palm).
+    other = hand("Left", 0.2, 0.45, gesture="None")
+    devices.script = [
+        palm(0.6), palm(0.3), [point("Right", 0.5, 0.45)], palm(0.6), palm(0.3), palm(0.3), palm(0.6),
+        palm(0.6), palm(0.5), palm(0.4), palm(0.3), palm(0.7), *[palms(0.4, 0.6), palms(0.4, 0.9)] * 3,
+        *[[other, *palm(0.4)], [other, *palm(0.9)]] * 3,
+    ]
+
+    app.run(Settings(engage_frames=1, release_frames=1, swipe_frames=3, swipe_cooldown_frames=3))
+
+    assert [e for e in devices.events if isinstance(e, tuple) and e[0] == "workspace"] == [
+        ("workspace", 1), ("workspace", -1),
+    ]
+
+
+def test_switching_hands_is_not_a_swipe(devices):
+    # The right palm on the right, then the left hand points and opens on the left: neither palm moved.
+    devices.script = [
+        [point("Right", 0.7, 0.45)], [hand("Right", 0.7, 0.45, gesture="Open_Palm")],
+        [point("Left", 0.3, 0.45)], [hand("Left", 0.3, 0.45, gesture="Open_Palm")],
+    ]
+
+    app.run(Settings(engage_frames=1, release_frames=1))
+
+    assert not [e for e in devices.events if isinstance(e, tuple) and e[0] == "workspace"]
 
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):

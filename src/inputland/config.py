@@ -54,6 +54,11 @@ class Settings:
     # gap where they opened, ~fraction) zooms at zoom_speed wheel clicks per second per unit beyond it.
     zoom_dead_zone: float = 0.1
     zoom_speed: float = 10.0
+    # One open palm moved sideways by swipe_distance (fraction of the frame width) within swipe_frames switches
+    # workspace; then swipes are ignored for swipe_cooldown_frames, so the hand swinging back does not undo it.
+    swipe_distance: float = 0.25
+    swipe_frames: int = 10
+    swipe_cooldown_frames: int = 15
     preview: bool = False
 
     def __post_init__(self) -> None:
@@ -69,4 +74,8 @@ class Settings:
         if not (0 <= self.zoom_dead_zone < 1 and self.zoom_speed > 0):
             raise ValueError(
                 f"need 0 <= zoom_dead_zone < 1 and zoom_speed > 0, got {self.zoom_dead_zone} and {self.zoom_speed}"
+            )
+        if not (0 < self.swipe_distance < 1 and self.swipe_frames >= 2):
+            raise ValueError(
+                f"need 0 < swipe_distance < 1 and swipe_frames >= 2, got {self.swipe_distance} and {self.swipe_frames}"
             )
