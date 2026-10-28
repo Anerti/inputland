@@ -91,3 +91,41 @@ def test_tracker_falls_back_to_cpu_without_gpu(monkeypatch):
     tracker = tracking.HandTracker(Path("model"))
     assert tried == [tracking.BaseOptions.Delegate.GPU, tracking.BaseOptions.Delegate.CPU]
     assert tracker._recognizer == "cpu recognizer"
+
+
+def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    import numpy as np
+
+    from inputland import tracking
+
+    seen = []
+
+    class Recognizer:
+        def recognize_for_video(self, image, ts):
+            seen.append(ts)
+            return NS(
+                handedness=[[NS(category_name="Left")]],
+                gestures=[[NS(category_name="Pointing_Up", score=0.9)]],
+                hand_landmarks=[[NS(x=0.5, y=0.5)] * 21],
+            )
+
+    monkeypatch.setattr(tracking.vision.GestureRecognizer, "create_from_options", lambda options: Recognizer())
+    tracker = tracking.HandTracker(Path("model"))
+    frame = np.zeros((4, 4, 3), np.uint8)
+    [hand] = tracker.detect(frame, 100)
+    tracker.detect(frame, 100)
+    assert hand.side == "Right"  # mirrored frames: MediaPipe names the opposite hand
+    assert seen == [100, 101]
+
+
+def test_pointer_without_uinput_access_points_to_the_readme(monkeypatch):
+    from inputland import pointer
+
+    def denied(*a, **kw):
+        raise pointer.UInputError('"/dev/uinput" cannot be opened for writing')
+
+    monkeypatch.setattr(pointer, "UInput", denied)
+    with pytest.raises(RuntimeError, match="Permissions"):
+        pointer.VirtualPointer()

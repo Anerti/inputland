@@ -1,6 +1,6 @@
 import time
 
-from evdev import AbsInfo, UInput, ecodes
+from evdev import AbsInfo, UInput, UInputError, ecodes
 
 ABS_MAX = 32767
 
@@ -21,8 +21,9 @@ class VirtualPointer:
         }
         try:
             self._device = UInput(capabilities, name=name)
-        except PermissionError as e:
-            raise RuntimeError("no write access to /dev/uinput; see README 'Permissions'") from e
+        # evdev checks access itself and raises UInputError (not PermissionError) for a missing group or module.
+        except (PermissionError, UInputError) as e:
+            raise RuntimeError(f"cannot use /dev/uinput ({e}); see README 'Permissions'") from e
         self._pressed_at: float | None = None
 
     def move_to(self, u: float, v: float) -> None:

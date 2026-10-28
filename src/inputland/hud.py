@@ -14,7 +14,7 @@ from pathlib import Path
 
 # Must be loaded before GTK so GTK's Wayland calls go through layer-shell.
 try:
-    ctypes.CDLL("libgtk4-layer-shell.so", mode=ctypes.RTLD_GLOBAL)
+    ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)  # the bare .so ships only in -dev packages
 except OSError as e:
     raise RuntimeError("gtk4-layer-shell not found: install it (pacman -S gtk4-layer-shell) or use --no-hud") from e
 

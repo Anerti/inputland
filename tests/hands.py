@@ -3,17 +3,16 @@
 from inputland.tracking import INDEX_TIP, MIDDLE_TIP, THUMB_TIP, WRIST, Hand
 
 
-def hand(side, x, y, gesture="Pointing_Up", pinch=None, middle_lifted=None, thumb=None):
+def hand(side, x, y, gesture="Pointing_Up", pinch=None):
     """Hand of size 0.1 (wrist to middle knuckle) with the knuckles at (x, y).
 
-    `pinch` puts the thumb tip on the "left" (index) or "right" (middle) fingertip; `thumb` places it explicitly.
+    `pinch` puts the thumb tip on the "left" (index) or "right" (middle) fingertip.
     """
     lm = [(x, y)] * 21
     lm[WRIST] = (x, y + 0.1)
     lm[INDEX_TIP] = (x, y - 0.1)
-    lifted = pinch == "right" if middle_lifted is None else middle_lifted
-    lm[MIDDLE_TIP] = (x + 0.02, y - 0.05) if lifted else (x + 0.02, y + 0.05)  # else folded into the palm
-    lm[THUMB_TIP] = thumb or {"left": lm[INDEX_TIP], "right": lm[MIDDLE_TIP]}.get(pinch, (x + 0.05, y + 0.05))
+    lm[MIDDLE_TIP] = (x + 0.02, y - 0.05) if pinch == "right" else (x + 0.02, y + 0.05)  # else folded into the palm
+    lm[THUMB_TIP] = {"left": lm[INDEX_TIP], "right": lm[MIDDLE_TIP]}.get(pinch, (x + 0.05, y + 0.05))
     return Hand(side, gesture, 0.9, tuple(lm))
 
 
