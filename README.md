@@ -11,7 +11,7 @@ Swipe one open palm (🖐️) quickly left or right, with the hand that was poin
 To change the volume or the screen brightness, hold one palm open (🖐️) and pinch (🤏) with the other hand, as if grabbing a slider, then move the pinching hand: up / down for volume, right / left for brightness, about one step per centimeter. Whichever direction steps first keeps the gesture until you let go of the pinch. It taps the volume and brightness keys, so your desktop's own bindings do the change and show it (Omarchy shows its OSD); a pinch that was already dragging stays a drag.
 Make a fist (✊) with either hand to pause: the hands are ignored, so you can gesture freely, until you open a palm (🖐️) to resume.
 Hold an index fingertip on your forehead for half a second to steer the cursor with your head instead (your nose tip; the cursor starts at the screen center), and again to go back to your hand. Pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
-A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `Slider` / `Volume` / `Brightness`, `At edge` when the hand is outside the mapped region, `Paused`, `Head` in head mode) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
+A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `Slider` / `Volume` / `Brightness`, `At edge` when the hand is outside the mapped region, `Paused`, `Head` in head mode), and `Close...`, `Paste...`, `Head...` or `Head off...` while a hold builds up, so you can let go in time. It highlights the hand moving the cursor and, when none does, underlines the one whose gestures count (the last to point), in your Omarchy theme colors. Poses that do nothing show `-`.
 
 ## Setup
 
@@ -38,9 +38,11 @@ sudo modprobe uinput
 
 ```sh
 uv run inputland            # run with the HUD (Ctrl+C to quit)
-uv run inputland --preview  # camera view instead of the HUD: green box = active, orange = idle (q/Esc quits)
+uv run inputland --preview  # camera view with the HUD's text and pinch ratios; green box = active (q/Esc quits)
 uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
 ```
+
+Started without a terminal (e.g. from a keybinding), it shows a fatal error as a desktop notification.
 
 ### Calibration
 
@@ -49,7 +51,7 @@ uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the
 | `--region L T R B` | `0.25 0.2 0.75 0.7` | Part of the camera frame mapped to the screen. Smaller = less hand travel. |
 | `--min-cutoff` | `1.0` | Lower = steadier cursor when still, more lag. |
 | `--beta` | `10.0` | Higher = less lag on fast moves, more jitter. |
-| `--pinch-ratio` | `0.35` | Thumb-index distance, as a fraction of hand size, that counts as a pinch. Raise if pinches are missed, lower if it clicks on its own. |
+| `--pinch-ratio` | `0.35` | Thumb-index distance, as a fraction of hand size, that counts as a pinch. Raise if pinches are missed, lower if it clicks on its own; `--preview` shows each hand's ratio. |
 | `--scroll-speed` | `80` | Wheel clicks per second for each frame height the hand moves past the dead zone. |
 | `--scroll-dead-zone` | `0.03` | Hand travel (fraction of frame height) that does not scroll yet. Raise if it scrolls while you hold still. |
 | `--zoom-speed` | `10` | Wheel clicks per second for each unit (log ratio) the gap between the palms changes past the dead zone. |
@@ -77,7 +79,7 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 | `filters.py` | One Euro filter (jitter vs. lag) |
 | `config.py` | `Settings`, `Region` (camera box → screen) |
 | `pointer.py` | uinput absolute pointer (evdev), plus the copy/paste, volume and brightness keys and closing the window |
-| `app.py` | Main loop wiring the above, calibration preview |
+| `app.py` | Main loop wiring the above, what the HUD says (`describe`), calibration preview |
 | `hud.py` | GTK4 layer-shell overlay; GTK owns the main thread, the loop runs in a worker thread and sends `Status` updates via `GLib.idle_add` |
 | `cli.py` | Argument parsing, logging, exit codes |
 

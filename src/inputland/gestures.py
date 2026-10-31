@@ -1,4 +1,4 @@
-from math import dist
+from math import dist, inf
 
 from inputland.tracking import (
     INDEX_PIP, INDEX_TIP, MIDDLE_MCP, MIDDLE_PIP, MIDDLE_TIP, PINKY_PIP, PINKY_TIP, RING_PIP, RING_TIP, THUMB_TIP,
@@ -11,10 +11,16 @@ def is_gesture(hand: Hand, gesture: str, min_score: float) -> bool:
     return hand.gesture == gesture and hand.score >= min_score
 
 
-def is_pinching(hand: Hand, ratio: float) -> bool:
-    """Thumb tip on the index tip, closer than `ratio` x the hand size (wrist to middle knuckle)."""
+def pinch_ratio(hand: Hand) -> float:
+    """Thumb tip to index tip distance over the hand size (wrist to middle knuckle); inf for a hand of no size."""
     lm = hand.landmarks
-    return dist(lm[THUMB_TIP], lm[INDEX_TIP]) < ratio * dist(lm[WRIST], lm[MIDDLE_MCP])
+    size = dist(lm[WRIST], lm[MIDDLE_MCP])
+    return dist(lm[THUMB_TIP], lm[INDEX_TIP]) / size if size else inf
+
+
+def is_pinching(hand: Hand, ratio: float) -> bool:
+    """Thumb tip on the index tip: `pinch_ratio` under `ratio`."""
+    return pinch_ratio(hand) < ratio
 
 
 def is_love_sign(hand: Hand) -> bool:
@@ -96,3 +102,7 @@ class Debounce:
         if self._streak >= (self.on_frames if raw else self.off_frames):
             self.state, self._streak = raw, 0
         return self.state
+
+    def pending(self, frames: int) -> bool:
+        """Turning True: at least `frames` consecutive True inputs so far, not yet `on_frames`."""
+        return not self.state and self._streak >= frames

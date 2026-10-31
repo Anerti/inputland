@@ -1,6 +1,9 @@
 import argparse
+import contextlib
+import html
 import logging
 import os
+import subprocess
 import sys
 
 from inputland.app import run
@@ -62,6 +65,7 @@ def main() -> None:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
     try:
         settings = Settings(
             camera=args.camera,
@@ -80,7 +84,7 @@ def main() -> None:
         )
         if args.no_hud or args.preview:
             run(settings)
-        elif not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+        elif not display:
             logging.info("no display (TTY?): running without the HUD")
             run(settings)
         else:
@@ -91,4 +95,7 @@ def main() -> None:
         pass
     except (OSError, RuntimeError, ValueError) as e:
         logging.error("%s", e)
+        if display and not (sys.stderr and sys.stderr.isatty()):  # from a keybinding or launcher: nobody sees the log
+            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                subprocess.run(["notify-send", "--app-name=inputland", "inputland stopped", html.escape(str(e))], timeout=2)
         sys.exit(1)

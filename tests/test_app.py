@@ -157,6 +157,27 @@ def test_held_love_closes_once_after_pointing(devices):
     assert [s.action for s in statuses if s.action] == [("Right", "Close")]
 
 
+def test_a_long_hold_shows_while_it_builds_up_then_acts(devices):
+    o, l = point("Right", 0.5, 0.45), love("Right", 0.5, 0.45)
+    devices.script = [[o], [l], [l], [l]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, close_frames=3), statuses.append)
+
+    assert [(s.holding, s.action) for s in statuses] == [
+        (None, None), (("Right", "Close"), None), (None, ("Right", "Close")),
+    ]
+
+
+def test_status_reports_the_last_driver_as_owner_until_no_hand_is_seen(devices):
+    devices.script = [[point("Right", 0.5, 0.45)], [hand("Right", 0.5, 0.45, gesture="None")], []]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1), statuses.append)
+
+    assert [(s.driver, s.owner) for s in statuses] == [("Right", "Right"), (None, "Right"), (None, None)]
+
+
 def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
     devices.script = [[point("Right", 0.5, 0.45)]] + [[love("Right", 0.5, 0.45, pinch="left")]] * 5
 
@@ -317,6 +338,20 @@ def test_closing_a_hand_to_stop_scrolling_does_not_pause(devices, unnamed):
     assert statuses[-1].driver == "Right"
 
 
+def test_preview_shows_the_hud_text_and_each_hand_pinch_ratio(monkeypatch):
+    import numpy as np
+
+    texts = []
+    monkeypatch.setattr(app.cv2, "putText", lambda img, text, *a: texts.append(text))
+    monkeypatch.setattr(app.cv2, "imshow", lambda *a: None)
+    monkeypatch.setattr(app.cv2, "waitKey", lambda delay: -1)
+    paused = app.Status(None, (("Right", "None"),), paused=True)
+
+    assert app._show_preview(np.zeros((480, 640, 3), np.uint8), [pinch("Right", 0.5, 0.45)], paused, Settings())
+    assert any("pinch 0.00" in t for t in texts)
+    assert any("Paused" in t for t in texts)
+
+
 def test_settings_reject_filter_values_that_break_smoothing():
     with pytest.raises(ValueError):
         Settings(min_cutoff=0)
@@ -347,6 +382,7 @@ def test_touching_the_forehead_toggles_head_pointing(devices):
     assert devices.events[2][0] > 0.5
     assert devices.events[-1] == pytest.approx((0.5, 0.1))
     assert [s.head for s in statuses] == [False, True, True, True, True, False]
+    assert [s.holding for s in statuses] == [("Right", "Head"), None, None, None, ("Right", "Head off"), None]
 
 
 def test_face_is_checked_every_third_frame_with_a_hand_until_head_pointing(devices):

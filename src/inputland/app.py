@@ -13,7 +13,7 @@ from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, touches_head,
+    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, pinch_ratio, touches_head,
 )
 from inputland.pointer import VirtualPointer
 from inputland.tracking import (
@@ -26,10 +26,26 @@ log = logging.getLogger(__name__)
 PREVIEW_WINDOW = "inputland preview"
 FACE_EVERY = 3
 
+SIDES = ("Left", "Right")
+STARTING = "Starting"
+IDLE = "Point to start"
+ABSENT = "Not seen"
+IGNORED = "-"
+HEAD = "Head"
+TEXTS = (
+    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
+    "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
+    "Paused", HEAD,
+)
+
 
 @dataclass(frozen=True)
 class Status:
-    """What the loop sees, for the HUD."""
+    """What the loop sees, for the HUD.
+
+    `owner` is the hand whose gestures count (the driver, else the last one); `holding` is (side, action) for a hold
+    building up before it acts.
+    """
 
     driver: str | None
     hands: tuple[tuple[str, str], ...]
@@ -41,6 +57,37 @@ class Status:
     adjusting: tuple[str, str] | None = None
     paused: bool = False
     head: bool = False
+    owner: str | None = None
+    holding: tuple[str, str] | None = None
+
+
+def describe(side: str, status: Status | None) -> tuple[str, str]:
+    """What the HUD segment of `side` says, and its CSS state; `owner` marks the hand whose gestures count."""
+    if status is None:
+        return STARTING, "absent"
+    if status.paused:
+        return "Paused", "absent"
+    if status.action and side == status.action[0]:
+        return status.action[1], "driving"
+    if status.adjusting:
+        return status.adjusting[1], "driving" if side == status.adjusting[0] else "seen"
+    if status.scrolling:
+        return "Scrolling", "driving" if side == status.scrolling else "seen"
+    if status.zooming:
+        return "Zooming", "driving" if side == status.zooming else "seen"
+    if side == status.driver and status.pressed:
+        return "Pinch", "driving"
+    if status.holding and side == status.holding[0]:
+        text, state = f"{status.holding[1]}...", "seen"
+    elif status.head:
+        text, state = HEAD, "seen"
+    elif side == status.driver:
+        return "At edge" if status.edge else "Moving", "driving"
+    elif (gesture := dict(status.hands).get(side)) is None:
+        text, state = ABSENT if status.hands else IDLE, "absent"
+    else:
+        text, state = ("Pointing", "seen") if gesture == "Pointing_Up" else (IGNORED, "absent")
+    return text, "owner" if side == status.owner else state
 
 
 def run(
@@ -127,7 +174,8 @@ def run(
                 face = None
             elif head or n % FACE_EVERY == 0:
                 face = faces.detect(frame, int(now * 1000))
-            if _started(head_touch, face is not None and any(touches_head(h, face) for h in hands)):
+            toucher = next((h.side for h in hands if face is not None and touches_head(h, face)), None)
+            if _started(head_touch, toucher is not None):
                 head = not head
                 log.info("head pointing" if head else "hand pointing")
                 head_anchor = face[NOSE_TIP]
@@ -243,18 +291,23 @@ def run(
                 swipe_from = n + settings.swipe_cooldown_frames
 
             action = next((name for debounce, name in actions if debounce.state), None)
+            hold = next((name for debounce, name in actions if debounce.pending(settings.engage_frames)), None)
+            holding = (owner, hold) if owner and hold else None
+            if toucher and head_touch.pending(settings.engage_frames):
+                holding = toucher, "Head off" if head else "Head"
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
                 pressed=pinch.state, action=(owner, action) if owner and action else None, edge=edge,
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
                 adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
+                owner=owner, holding=holding,
             )
             if status != last_status:
                 on_status(status)
                 last_status = status
 
-            if settings.preview and not _show_preview(frame, seen, driver is not None, settings):
+            if settings.preview and not _show_preview(frame, seen, status, settings):
                 break
 
 
@@ -283,22 +336,21 @@ def _spread(hands: list[Hand]) -> float:
     return max(abs(a - b), 0.05)
 
 
-def _show_preview(frame: np.ndarray, hands: list[Hand], active: bool, settings: Settings) -> bool:
-    """Draw the calibration view. Returns False when the user asks to quit."""
+def _show_preview(frame: np.ndarray, hands: list[Hand], status: Status, settings: Settings) -> bool:
+    """Draw the calibration view: the HUD's text, each hand's pose and pinch ratio. False when the user quits."""
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     h, w = frame.shape[:2]
     r = settings.region
-    color = (0, 200, 0) if active else (0, 160, 255)
+    color = (0, 200, 0) if status.driver else (0, 160, 255)
     cv2.rectangle(frame, (int(r.left * w), int(r.top * h)), (int(r.right * w), int(r.bottom * h)), color, 2)
     for hand in hands:
         for x, y in hand.landmarks:
             cv2.circle(frame, (int(x * w), int(y * h)), 3, (255, 255, 255), -1)
         x, y = hand.landmarks[INDEX_MCP]
         cv2.circle(frame, (int(x * w), int(y * h)), 7, color, -1)
-        cv2.putText(
-            frame, f"{hand.side}: {hand.gesture} {hand.score:.2f}",
-            (int(x * w) + 10, int(y * h)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
-        )
-    cv2.putText(frame, "ACTIVE" if active else "idle", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        for i, text in enumerate((f"{hand.side}: {hand.gesture} {hand.score:.2f}", f"pinch {pinch_ratio(hand):.2f}")):
+            cv2.putText(frame, text, (int(x * w) + 10, int(y * h) + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    hud = "   ".join(f"{side[0]} {describe(side, status)[0]}" for side in SIDES)
+    cv2.putText(frame, hud, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     cv2.imshow(PREVIEW_WINDOW, frame)
     return cv2.waitKey(1) & 0xFF not in (ord("q"), 27)

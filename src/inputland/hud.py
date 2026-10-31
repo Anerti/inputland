@@ -26,26 +26,15 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 from gi.repository import Gtk4LayerShell as LayerShell
 
-from inputland.app import Status
+from inputland.app import SIDES, TEXTS, Status, describe
 
 log = logging.getLogger(__name__)
 
 Worker = Callable[[Callable[[Status], None], threading.Event], None]
 
-SIDES = ("Left", "Right")
-
-STARTING = "Starting"
-IDLE = "Point to start"
-ABSENT = "Not seen"
-IGNORED = "-"
-HEAD = "Head"
-TEXTS = (
-    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
-    "Scrolling", "Zooming", "Slider", "Volume", "Brightness", "Paused", HEAD,
-)
 NAME_CHARS = max(len(t) for t in TEXTS)
 
-DEFAULT_COLORS = {"background": "#121212", "foreground": "#e6e6e6", "active_border_color": "#8aa4ff"}
+DEFAULT_COLORS = {"background": "#121212", "foreground": "#e6e6e6", "accent": "#8aa4ff"}
 
 CSS = """
 .hud {
@@ -57,24 +46,35 @@ CSS = """
   color: @fg;
 }
 .segment { padding: 3px 8px; transition: background 150ms ease-out, color 150ms ease-out; }
-.segment.absent { color: alpha(@fg, 0.60); }
-.segment.driving { background: @active; color: @bg; font-weight: bold; }
+.segment.absent { color: alpha(@fg, 0.85); }
+.segment.owner { box-shadow: inset 0 -2px @fg; }
+.segment.driving { background: @active; color: @on_active; font-weight: bold; }
 """
 
 
 def theme_css() -> str:
-    """Color definitions from the current Omarchy theme, falling back to neutral defaults."""
+    """Color definitions from the current Omarchy theme, falling back to neutral defaults.
+
+    The highlight is the theme's `active_border_color`, else its `accent` (every theme has one, few the former), with
+    black or white text, whichever contrasts more: they tie at luminance 0.179, so either reaches 4.5:1 (WCAG AA).
+    """
     state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
     colors = dict(DEFAULT_COLORS)
     try:
         theme = tomllib.loads((state / "omarchy/current/theme/colors.toml").read_text())
-        colors.update({k: v for k, v in theme.items() if k in colors})
     except (OSError, tomllib.TOMLDecodeError) as e:
         log.debug("no Omarchy theme (%s); using default HUD colors", e)
+        theme = {}
+    colors.update({k: v for k, v in theme.items() if k in colors})
+    active = theme.get("active_border_color", colors["accent"])
+    rgba = Gdk.RGBA()
+    rgba.parse(active)
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (rgba.red, rgba.green, rgba.blue))
     return (
         f"@define-color bg {colors['background']};\n"
         f"@define-color fg {colors['foreground']};\n"
-        f"@define-color active {colors['active_border_color']};\n"
+        f"@define-color active {active};\n"
+        f"@define-color on_active {'#000000' if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 else '#ffffff'};\n"
     )
 
 
@@ -149,27 +149,3 @@ class Hud:
             text, state = describe(side, status)
             label.set_label(f"{side[0]}  {text}")
             label.set_css_classes(["segment", state])
-
-
-def describe(side: str, status: Status | None) -> tuple[str, str]:
-    """What the segment of `side` says, and its CSS state."""
-    if status is None:
-        return STARTING, "absent"
-    if status.paused:
-        return "Paused", "absent"
-    if status.action and side == status.action[0]:
-        return status.action[1], "driving"
-    if status.adjusting:
-        return status.adjusting[1], "driving" if side == status.adjusting[0] else "seen"
-    if status.scrolling:
-        return "Scrolling", "driving" if side == status.scrolling else "seen"
-    if status.zooming:
-        return "Zooming", "driving" if side == status.zooming else "seen"
-    if status.head:
-        return ("Pinch", "driving") if side == status.driver and status.pressed else (HEAD, "seen")
-    if side == status.driver:
-        return "Pinch" if status.pressed else "At edge" if status.edge else "Moving", "driving"
-    gesture = dict(status.hands).get(side)
-    if gesture is None:
-        return ABSENT if status.hands else IDLE, "absent"
-    return ("Pointing", "seen") if gesture == "Pointing_Up" else (IGNORED, "absent")

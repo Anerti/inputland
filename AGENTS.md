@@ -19,7 +19,7 @@ One loop in `app.run`, one direction: `Camera` → `HandTracker.detect` → `pic
 
 - `run` reports a `Status` through `on_status` only when it changes, and stops when the `stop` event is set.
 - With the HUD, GTK owns the main thread and `run` executes in the `vision` worker thread. Touch GTK only via `GLib.idle_add` (see `Hud._publish`).
-- `hud.py` is imported lazily in `cli.py` because it loads GTK and `libgtk4-layer-shell.so`; keep it out of other modules' imports.
+- `hud.py` is imported lazily in `cli.py` because it loads GTK and `libgtk4-layer-shell.so`; keep it out of other modules' imports. What the HUD says (`describe`) lives in `app.py` so `--preview` shows it too.
 - Devices (`Camera`, `HandTracker`, `VirtualPointer`) are context managers; tests replace them with fakes via `monkeypatch.setattr(app, ...)`, so keep `app.py` referencing them as module-level names.
 
 Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `hyprctl`) next to `pointer.py`, tunables as `Settings` fields in `config.py` (validated in `__post_init__`) with a CLI flag in `cli.py`.
@@ -41,13 +41,14 @@ Where new code goes: new gestures in `gestures.py`, new outputs (clicks, keys, `
 - **Head pointing**: an index tip held on the forehead (`head_touch_frames`) toggles it; it must leave the forehead to toggle back. The nose tip's offset from where head mode started, over `head_range`, maps around the screen center, with its own filters; the hand keeps driver, pinch and gestures but stops moving the cursor. In hand mode the face is looked for only every `FACE_EVERY` frames (the touch is held for many), reusing the last one in between; in head mode every frame.
 - **`--preview` disables the HUD**: OpenCV's window segfaults next to GTK.
 - **Model URLs are pinned** (`float16/1`), not `latest`, so the gesture set cannot change underneath. Downloads must match `MODEL_SHA256` / `FACE_MODEL_SHA256` (a captive-portal page must not get cached), then go to a `.part` file and rename atomically; bump both together. The cached file is re-hashed on every start, so a bump reaches existing installs.
-- **HUD clicks pass through** via an empty input region; segment width is fixed (`NAME_CHARS`) so the overlay never resizes.
+- **HUD clicks pass through** via an empty input region; segment width is fixed (`NAME_CHARS`) so the overlay never resizes, and the owner underline is an inset `box-shadow`, not a border, for the same reason.
+- **HUD highlight color** is the theme's `active_border_color`, else `accent` (every Omarchy theme has `accent`, few the former), with black or white text picked by luminance: the theme's own background on its accent drops under 4.5:1 on several themes. The owner underline uses the text color instead: some accents fall under 3:1 on the HUD background.
 - **`HandTracker` runs on the GPU delegate**, falling back to the CPU: on a throttled CPU (battery, power-saver) inference takes 30–60 ms, over the 33 ms frame budget, and the cursor stutters.
 - **`HandTracker.detect` forces strictly increasing timestamps**: MediaPipe VIDEO mode rejects repeats.
 
 ## Errors
 
-Raise `RuntimeError`/`ValueError`/`OSError` with an actionable message (what to install, which README section); `cli.main` logs it and exits 1. Don't catch broader in library code.
+Raise `RuntimeError`/`ValueError`/`OSError` with an actionable message (what to install, which README section); `cli.main` logs it, shows it as a desktop notification when there is no terminal to read the log, and exits 1. Don't catch broader in library code.
 
 ## Tests
 

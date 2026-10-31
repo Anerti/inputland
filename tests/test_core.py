@@ -5,7 +5,9 @@ from hands import face, hand, love, pinch, point
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, touches_head
+from inputland.gestures import (
+    Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, pinch_ratio, touches_head,
+)
 from inputland.tracking import WRIST, Hand
 
 
@@ -46,6 +48,14 @@ def test_debounce_needs_consecutive_frames():
     assert [d.update(x) for x in [False, True, False, False]] == [True, True, True, False]
 
 
+def test_debounce_reports_a_hold_building_up_from_its_nth_frame_until_it_turns_on():
+    d = Debounce(on_frames=4, off_frames=2)
+    steps = [(d.update(True), d.pending(2)) for _ in range(4)]
+    assert steps == [(False, False), (False, True), (False, True), (True, False)]
+    d.update(False)
+    assert not d.pending(1)
+
+
 def test_is_gesture_checks_label_and_score():
     lm = ((0.0, 0.0),) * 21
     assert is_gesture(Hand("Right", "Pointing_Up", 0.9, lm), "Pointing_Up", 0.5)
@@ -67,6 +77,12 @@ def test_is_pinching_scales_with_hand_size():
     assert is_pinching(pinch("Right", 0.5, 0.5), 0.35)
     assert not is_pinching(point("Right", 0.5, 0.5), 0.35)
     assert not is_pinching(pinch("Right", 0.5, 0.5, button="right"), 0.35)
+
+
+def test_pinch_ratio_is_thumb_to_index_over_hand_size():
+    assert pinch_ratio(pinch("Right", 0.5, 0.5)) == 0
+    assert pinch_ratio(point("Right", 0.5, 0.5)) == pytest.approx(10 ** 0.5 / 2)
+    assert pinch_ratio(Hand("Right", "None", 0.9, ((0.0, 0.0),) * 21)) == float("inf")
 
 
 def test_love_sign_needs_index_and_pinky_up_middle_and_ring_folded():
@@ -314,6 +330,31 @@ def test_cached_model_is_downloaded_again_when_its_checksum_changes(monkeypatch,
 
     monkeypatch.setattr(tracking.urllib.request, "urlopen", offline)
     assert tracking.ensure_model(tracking.MODEL_URL, digest).read_bytes() == b"new model"
+
+
+@pytest.mark.parametrize(
+    ("terminal", "display", "notified"), [(False, "wayland-1", True), (True, "wayland-1", False), (False, None, False)],
+)
+def test_cli_error_is_a_desktop_notification_without_a_terminal(monkeypatch, terminal, display, notified):
+    import subprocess
+
+    from inputland import cli
+
+    def fail(settings):
+        raise ValueError("need 0 < pinch_ratio < 1, got 2.0")
+
+    sent = []
+    monkeypatch.setattr(cli, "run", fail)
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: sent.append(args))
+    monkeypatch.setattr(cli.sys, "argv", ["inputland", "--no-hud"])
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: terminal)
+    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+        monkeypatch.delenv(name, raising=False)
+    if display:
+        monkeypatch.setenv("WAYLAND_DISPLAY", display)
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert [args[-1] for args in sent] == (["need 0 &lt; pinch_ratio &lt; 1, got 2.0"] if notified else [])
 
 
 def test_index_tip_on_the_forehead_touches_the_head():
