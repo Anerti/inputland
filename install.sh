@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCHER="${XDG_BIN_HOME:-$HOME/.local/bin}/inputland"
 LAUNCHER_MARK="# managed by inputland install.sh"
+DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/inputland.desktop"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/inputland"
 RULE=/etc/udev/rules.d/99-inputland-uinput.rules
 RULE_TEXT='KERNEL=="uinput", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"'
@@ -91,6 +92,28 @@ install_launcher() {
   [[ ":$PATH:" == *":$(dirname "$LAUNCHER"):"* ]] || warn "$(dirname "$LAUNCHER") is not in PATH; add it to run 'inputland' directly"
 }
 
+install_desktop() {
+  step "App launcher entry"
+  if [[ -e $DESKTOP ]] && ! grep -qF "$LAUNCHER_MARK" "$DESKTOP"; then
+    warn "$DESKTOP exists and was not created by this script; left untouched"
+    return
+  fi
+  mkdir -p "$(dirname "$DESKTOP")"
+  cat >"$DESKTOP" <<EOF
+$LAUNCHER_MARK
+[Desktop Entry]
+Type=Application
+Name=inputland
+Comment=Control the mouse with hand gestures
+Exec="$LAUNCHER"
+Icon=input-mouse
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=gesture;hand;mouse;camera;
+EOF
+  ok "Installed $DESKTOP"
+}
+
 setup_uinput() {
   step "Virtual pointer permissions (/dev/uinput)"
   if [[ $(cat "$RULE" 2>/dev/null) == "$RULE_TEXT" ]] && id -nG | grep -qw uinput; then
@@ -133,6 +156,7 @@ cmd_install() {
   install_layer_shell
   install_env
   install_launcher
+  install_desktop
   cmd_setup
   header "Done"
   echo "  Start with:      inputland"
@@ -151,6 +175,7 @@ cmd_uninstall() {
   confirm "Remove the launcher, the virtual environment and the cached models?" || die "Cancelled."
   step "Files"
   if [[ -e $LAUNCHER ]] && grep -qF "$LAUNCHER_MARK" "$LAUNCHER"; then rm -f "$LAUNCHER"; ok "Removed $LAUNCHER"; fi
+  if [[ -e $DESKTOP ]] && grep -qF "$LAUNCHER_MARK" "$DESKTOP"; then rm -f "$DESKTOP"; ok "Removed $DESKTOP"; fi
   rm -rf "$CACHE" && ok "Removed $CACHE"
   rm -rf "$ROOT/.venv" && ok "Removed $ROOT/.venv"
 

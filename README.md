@@ -60,9 +60,9 @@ git clone https://github.com/Anerti/inputland.git ~/Projects/inputland && cd ~/P
 
 | Command | What it does |
 |---|---|
-| `./install.sh install` | Installs `gtk4-layer-shell` (pacman) and `uv sync --locked`, adds an `inputland` command in `~/.local/bin`, then runs `setup` |
+| `./install.sh install` | Installs `gtk4-layer-shell` (pacman) and `uv sync --locked`, adds an `inputland` command in `~/.local/bin` and an app launcher entry, then runs `setup` |
 | `./install.sh setup` | Grants `/dev/uinput` access through a `uinput` group and udev rule (not the `input` group, which can read every keyboard), downloads and verifies the models (~12 MB) to `~/.cache/inputland`, checks for a camera |
-| `./install.sh uninstall` | Removes the `inputland` command, `.venv` and the cached models; asks before removing the udev rule and the `uinput` group membership. The source folder is kept |
+| `./install.sh uninstall` | Removes the `inputland` command, the launcher entry, `.venv` and the cached models; asks before removing the udev rule and the `uinput` group membership. The source folder is kept |
 
 It needs [uv](https://docs.astral.sh/uv/) and asks for `sudo` only for the package and the permissions. With [gum](https://github.com/charmbracelet/gum) installed (it ships with Omarchy) it shows menus and progress spinners; without it, plain prompts. After the first setup, log out and back in so the group membership applies.
 
@@ -74,7 +74,7 @@ inputland --preview  # camera view with the HUD's text and pinch ratios; green b
 inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
 ```
 
-Started without a terminal (e.g. from a keybinding), it shows a fatal error as a desktop notification. To start it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
+Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error as a desktop notification. To start it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
 ### Calibration
 
