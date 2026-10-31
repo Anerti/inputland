@@ -33,7 +33,7 @@ In head mode, pinch, right click and the other gestures still work with the hand
 
 ## HUD
 
-A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors. Clicks pass through it.
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors, or your GTK theme's elsewhere. Clicks pass through it.
 
 | Label | Meaning |
 | ----- | ------- |

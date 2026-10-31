@@ -36,6 +36,14 @@ NAME_CHARS = max(len(t) for t in TEXTS)
 
 DEFAULT_COLORS = {"background": "#121212", "foreground": "#e6e6e6", "accent": "#8aa4ff"}
 
+# Plain GTK 4 names (not libadwaita's @accent_bg_color); the selected pair already contrasts.
+GTK_THEME_CSS = (
+    "@define-color bg @theme_bg_color;\n"
+    "@define-color fg @theme_fg_color;\n"
+    "@define-color active @theme_selected_bg_color;\n"
+    "@define-color on_active @theme_selected_fg_color;\n"
+)
+
 CSS = """
 .hud {
   background: alpha(@bg, 0.94);
@@ -53,7 +61,7 @@ CSS = """
 
 
 def theme_css() -> str:
-    """Color definitions from the current Omarchy theme, falling back to neutral defaults.
+    """Color definitions from the current Omarchy theme, else from the GTK theme (any desktop).
 
     The highlight is the theme's `active_border_color`, else its `accent` (every theme has one, few the former), with
     black or white text, whichever contrasts more: they tie at luminance 0.179, so either reaches 4.5:1 (WCAG AA).
@@ -63,8 +71,8 @@ def theme_css() -> str:
     try:
         theme = tomllib.loads((state / "omarchy/current/theme/colors.toml").read_text())
     except (OSError, tomllib.TOMLDecodeError) as e:
-        log.debug("no Omarchy theme (%s); using default HUD colors", e)
-        theme = {}
+        log.debug("no Omarchy theme (%s); using the GTK theme's colors", e)
+        return GTK_THEME_CSS
     colors.update({k: v for k, v in theme.items() if k in colors})
     active = theme.get("active_border_color", colors["accent"])
     rgba = Gdk.RGBA()

@@ -61,15 +61,19 @@ def test_hud_marks_the_hand_whose_gestures_count_unless_it_drives():
         ('accent = "#7aa2f7"', "#7aa2f7", "#000000"),
         ('accent = "#1e66f5"', "#1e66f5", "#ffffff"),
         ('accent = "#1e66f5"\nactive_border_color = "#d6d3de"', "#d6d3de", "#000000"),
-        (None, "#8aa4ff", "#000000"),
     ],
 )
 def test_hud_highlight_is_the_theme_accent_with_readable_text(tmp_path, monkeypatch, theme, active, text):
-    if theme:
-        colors = tmp_path / "omarchy/current/theme/colors.toml"
-        colors.parent.mkdir(parents=True)
-        colors.write_text(theme)
+    colors = tmp_path / "omarchy/current/theme/colors.toml"
+    colors.parent.mkdir(parents=True)
+    colors.write_text(theme)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     css = hud.theme_css()
     assert f"@define-color active {active};" in css
     assert f"@define-color on_active {text};" in css
+
+
+@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+def test_hud_without_omarchy_follows_the_gtk_theme(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    assert hud.theme_css() == hud.GTK_THEME_CSS
