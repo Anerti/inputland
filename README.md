@@ -23,7 +23,7 @@ Point with either index finger and the cursor follows the base of that finger, s
 | <img src="docs/gestures/two-palms.jpg" width="180" alt="Two open palms"> | **Two open palms**: move the pointing hand up / down to scroll, joystick style; spread the palms apart / together to zoom in / out (Ctrl+wheel, so most apps zoom around the cursor). The further, the faster |
 | <img src="docs/gestures/palm.jpg" width="180" alt="Open palm"> | **One open palm** swiped quickly left / right: next / previous workspace, like Hyprland's touchpad swipe (Hyprland only). While paused: resume |
 | <img src="docs/gestures/palm-pinch.jpg" width="180" alt="Open palm and pinch"> | **One palm open, the other hand pinching**, like grabbing a slider: move the pinch up / down for volume, right / left for brightness, about one step per centimeter |
-| <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm |
+| <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm. **Both fists** held about 2 seconds: quit |
 | <img src="docs/gestures/forehead.jpg" width="180" alt="Index on forehead"> | **Index fingertip on your forehead** for half a second: steer the cursor with your head (nose tip, starting at the screen center); again to go back to your hand |
 
 Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, so a stray pose from the other hand does nothing.

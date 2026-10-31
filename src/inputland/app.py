@@ -35,7 +35,7 @@ HEAD = "Head"
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
     "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
-    "Paused", HEAD,
+    "Paused", "Quit...", HEAD,
 )
 
 
@@ -44,7 +44,7 @@ class Status:
     """What the loop sees, for the HUD.
 
     `owner` is the hand whose gestures count (the driver, else the last one); `holding` is (side, action) for a hold
-    building up before it acts.
+    building up before it acts; `quitting` is the both-fists hold building up.
     """
 
     driver: str | None
@@ -59,12 +59,15 @@ class Status:
     head: bool = False
     owner: str | None = None
     holding: tuple[str, str] | None = None
+    quitting: bool = False
 
 
 def describe(side: str, status: Status | None) -> tuple[str, str]:
     """What the HUD segment of `side` says, and its CSS state; `owner` marks the hand whose gestures count."""
     if status is None:
         return STARTING, "absent"
+    if status.quitting:
+        return "Quit...", "seen"
     if status.paused:
         return "Paused", "absent"
     if status.action and side == status.action[0]:
@@ -116,6 +119,7 @@ def run(
         actions = ((victory, "Right click"), (thumb_up, "Copy"), (thumb_down, "Paste"), (love, "Close"))
         fists = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
+        quitting = Debounce(settings.quit_frames, settings.release_frames)
         head_touch = Debounce(settings.head_touch_frames, settings.release_frames)
         head_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         head_y = OneEuroFilter(settings.min_cutoff, settings.beta)
@@ -126,7 +130,7 @@ def run(
             "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom; "
             "swipe one open palm left or right to switch workspace; "
             "hold one palm open and pinch with the other hand, then move it up / down for volume or sideways for "
-            "brightness; make a fist to pause, open a palm to resume; "
+            "brightness; make a fist to pause, open a palm to resume, hold both fists to quit; "
             "hold an index finger on your forehead to steer the cursor with your head, again to stop"
         )
         driver: str | None = None
@@ -158,9 +162,14 @@ def run(
                 grip = grab.side
             elif any(h.side == grip and not is_pinching(h, settings.pinch_ratio) for h in seen):
                 grip = None
-            fists_closed = _started_by_either(
-                fists, [h for h in seen if h.side != grip], "Closed_Fist", settings.min_gesture_score
-            )
+            free = [h for h in seen if h.side != grip]
+            # from `seen`, not `hands`: the first fist pauses, which drops every hand
+            if quitting.update(
+                len(free) == 2 and all(is_gesture(h, "Closed_Fist", settings.min_gesture_score) for h in free)
+            ):
+                log.info("both fists held: quitting")
+                break
+            fists_closed = _started_by_either(fists, free, "Closed_Fist", settings.min_gesture_score)
             palms_opened = _started_by_either(wake, seen, "Open_Palm", settings.min_gesture_score)
             if palms_opened if paused else fists_closed and n >= pause_from:
                 paused = not paused
@@ -301,7 +310,7 @@ def run(
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
                 adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
-                owner=owner, holding=holding,
+                owner=owner, holding=holding, quitting=quitting.pending(settings.engage_frames),
             )
             if status != last_status:
                 on_status(status)

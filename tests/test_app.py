@@ -312,6 +312,18 @@ def test_a_fist_pauses_until_an_open_palm(devices):
     assert [s.paused for s in statuses] == [False, False, True, False, False]
 
 
+def test_both_fists_held_quit_even_while_paused(devices):
+    o, palm = point("Right", 0.5, 0.45), hand("Left", 0.3, 0.45, gesture="Open_Palm")
+    lf, rf = hand("Left", 0.3, 0.45, gesture="Closed_Fist"), hand("Right", 0.6, 0.45, gesture="Closed_Fist")
+    devices.script = [[o], [lf, rf], [o], [rf], [rf], [rf], [palm], [o], [lf, rf], [lf, rf], [palm], [o]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, quit_frames=2), statuses.append)
+
+    assert len(devices.events) == 2  # frames 0 and 7: a brief pair or one fist held does not quit, the held pair does
+    assert [s.quitting for s in statuses if s.paused] == [True, False, True]  # the HUD warns while it builds up
+
+
 def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):
     lp, rf = hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.6, 0.45, gesture="Closed_Fist")
     rp = hand("Right", 0.6, 0.45, gesture="Open_Palm")

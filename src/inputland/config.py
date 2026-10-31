@@ -37,6 +37,7 @@ class Settings:
     pinch_frames: int = 2
     paste_frames: int = 9
     close_frames: int = 30
+    quit_frames: int = 60
     min_cutoff: float = 1.0
     beta: float = 10.0
     pinch_ratio: float = 0.35
