@@ -263,3 +263,24 @@ def test_model_download_with_bad_checksum_is_not_cached(monkeypatch, tmp_path):
 
     monkeypatch.setattr(tracking, "MODEL_SHA256", tracking.hashlib.sha256(b"<html>login</html>").hexdigest())
     assert tracking.ensure_model().read_bytes() == b"<html>login</html>"
+
+
+def test_cached_model_is_downloaded_again_when_its_checksum_changes(monkeypatch, tmp_path):
+    import io
+
+    from inputland import tracking
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "inputland").mkdir()
+    (tmp_path / "inputland/gesture_recognizer.task").write_bytes(b"old model")
+    monkeypatch.setattr(tracking, "MODEL_SHA256", tracking.hashlib.sha256(b"new model").hexdigest())
+    monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"new model"))
+    # A model bump (or a damaged file) replaces the cached copy...
+    assert tracking.ensure_model().read_bytes() == b"new model"
+
+    def offline(url, timeout):
+        raise OSError("offline")
+
+    monkeypatch.setattr(tracking.urllib.request, "urlopen", offline)
+    # ...and a cached copy that matches is used without the network.
+    assert tracking.ensure_model().read_bytes() == b"new model"

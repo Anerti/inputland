@@ -28,4 +28,4 @@ except (ImportError, RuntimeError):  # no GTK 4 or gtk4-layer-shell on this mach
 def test_hud_shows_actions_not_gestures(status, left, right):
     assert hud.describe("Left", status)[0] == left
     assert hud.describe("Right", status)[0] == right
-    assert all(len(t) <= hud.NAME_CHARS for t in (left, right))
+    assert {left, right} <= set(hud.TEXTS)  # TEXTS sets the fixed width: every text shown must be in it

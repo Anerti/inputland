@@ -49,20 +49,22 @@ class Hand:
 
 
 def ensure_model() -> Path:
-    """Return the cached gesture model, downloading it on first run."""
+    """Return the cached gesture model, downloading it on first run or when MODEL_SHA256 no longer matches it."""
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "inputland"
     path = cache / "gesture_recognizer.task"
-    if not path.exists():
-        log.info("downloading gesture model to %s", path)
-        cache.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(MODEL_URL, timeout=30) as response:  # a stalled download fails instead of hanging
-            data = response.read()
-        # A captive portal or proxy can answer with a page instead; caching it would break every later start.
-        if hashlib.sha256(data).hexdigest() != MODEL_SHA256:
-            raise RuntimeError(f"gesture model download from {MODEL_URL} failed its checksum; check the network and retry")
-        tmp = path.with_suffix(".part")
-        tmp.write_bytes(data)
-        tmp.rename(path)  # atomic: an interrupted download never looks like a valid model
+    # Checked on every start (~10 ms): a model bump or a damaged file gets downloaded again.
+    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == MODEL_SHA256:
+        return path
+    log.info("downloading gesture model to %s", path)
+    cache.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(MODEL_URL, timeout=30) as response:  # a stalled download fails instead of hanging
+        data = response.read()
+    # A captive portal or proxy can answer with a page instead; caching it would break every later start.
+    if hashlib.sha256(data).hexdigest() != MODEL_SHA256:
+        raise RuntimeError(f"gesture model download from {MODEL_URL} failed its checksum; check the network and retry")
+    tmp = path.with_suffix(".part")
+    tmp.write_bytes(data)
+    tmp.rename(path)  # atomic: an interrupted download never looks like a valid model
     return path
 
 

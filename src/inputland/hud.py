@@ -41,8 +41,8 @@ IDLE = "Point to start"  # no hand in view
 ABSENT = "Not seen"
 IGNORED = "-"  # a pose that does nothing
 TEXTS = (
-    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Scrolling",
-    "Zooming", "Paused",
+    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
+    "Scrolling", "Zooming", "Paused",
 )
 NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
 

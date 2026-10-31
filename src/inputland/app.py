@@ -122,12 +122,11 @@ def run(
                 pointer.move_to(smooth_x(u, now), smooth_y(v, now))
 
             # Only the driver's pinch holds the left button: down on close, up on open, so a quick pinch clicks.
-            # A hand lost for a few frames (motion blur) keeps the button until the cursor lets go too.
+            # A hand lost for a few frames (motion blur) keeps the button until the cursor lets go too; one in view
+            # counts even in a pose MediaPipe does not name, or a quick double pinch would be one long press.
             was_pinching = pinch.state
-            if hand is None:
-                pinching = driver is not None and was_pinching
-            else:
-                pinching = driver is not None and is_pinching(hand, settings.pinch_ratio)
+            mine = next((h for h in hands if h.side == driver), None)
+            pinching = driver is not None and (is_pinching(mine, settings.pinch_ratio) if mine else was_pinching)
             if pinch.update(pinching) != was_pinching:
                 log.debug("left button %s", "up" if was_pinching else "down")
                 if was_pinching:
@@ -147,7 +146,8 @@ def run(
             if _started(thumb_down, any(is_gesture(h, "Thumb_Down", settings.min_gesture_score) for h in owned)):
                 log.debug("paste")
                 pointer.paste()
-            if _started(love, any(is_love_sign(h) for h in owned)):
+            # A pinch is the pointing pose plus the thumb: its loose pinky must not close the window mid-drag.
+            if _started(love, any(is_love_sign(h) and not is_pinching(h, settings.pinch_ratio) for h in owned)):
                 log.debug("close window")
                 pointer.close_window()
 

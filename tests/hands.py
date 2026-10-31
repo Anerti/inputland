@@ -20,9 +20,9 @@ def point(side, x, y):
     return hand(side, x, y)
 
 
-def love(side, x, y):
-    """🤟 with the pinky up too; MediaPipe usually misses it."""
-    lm = list(hand(side, x, y, gesture="None").landmarks)
+def love(side, x, y, pinch=None):
+    """🤟 with the pinky up too; MediaPipe usually misses it. `pinch` as in `hand`: a pinch with a loose pinky."""
+    lm = list(hand(side, x, y, gesture="None", pinch=pinch).landmarks)
     lm[PINKY_TIP] = (x - 0.03, y - 0.08)
     return Hand(side, "None", 0.9, tuple(lm))
 

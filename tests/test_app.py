@@ -153,6 +153,15 @@ def test_held_love_closes_once_after_pointing(devices):
     assert [s.closed for s in statuses if s.closed] == ["Right"]
 
 
+def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
+    # A pinch is the pointing pose plus the thumb, so a relaxed pinky reads as 🤟 for as long as the drag lasts.
+    devices.script = [[point("Right", 0.5, 0.45)]] + [[love("Right", 0.5, 0.45, pinch="left")]] * 5
+
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1, close_frames=3))
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["down"]
+
+
 def test_one_open_palm_swipe_switches_workspace_after_pointing(devices):
     def palm(x):
         return [hand("Right", x, 0.45, gesture="Open_Palm")]
@@ -197,10 +206,12 @@ def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
     assert devices.events.index("down") == 2  # move (pointing), move (pinch re-engaged), down
 
 
-def test_quick_double_pinch_presses_twice(devices):
-    o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
-    # Opening for 2 frames is shorter than release_frames: the pinch has its own, shorter debounce.
-    devices.script = [[o]] * 3 + [[p], [p], [o], [o], [p], [p]]
+@pytest.mark.parametrize("gap", ["Pointing_Up", "None"])
+def test_quick_double_pinch_presses_twice(devices, gap):
+    o, p, opened = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture=gap)
+    # Opening for 2 frames is shorter than release_frames: the pinch has its own, shorter debounce. MediaPipe may
+    # not call the half-open hand pointing yet; it is in view and not pinching, so the button still goes up.
+    devices.script = [[o]] * 3 + [[p], [p], [opened], [opened], [p], [p]]
 
     app.run(Settings(engage_frames=3, release_frames=5, pinch_frames=2))
 
