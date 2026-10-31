@@ -42,6 +42,10 @@ def main() -> None:
         "--swipe-distance", type=float, default=defaults.swipe_distance,
         help="sideways travel (fraction of frame width) of one open palm that switches workspace",
     )
+    parser.add_argument(
+        "--head-range", type=float, default=defaults.head_range,
+        help="nose travel (fraction of the frame) that crosses the screen in head mode (index finger on the forehead)",
+    )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
@@ -66,16 +70,16 @@ def main() -> None:
             zoom_speed=args.zoom_speed,
             zoom_dead_zone=args.zoom_dead_zone,
             swipe_distance=args.swipe_distance,
+            head_range=args.head_range,
             preview=args.preview,
         )
-        # OpenCV's preview window segfaults next to GTK, and it shows the same info anyway.
         if args.no_hud or args.preview:
             run(settings)
         elif not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
             logging.info("no display (TTY?): running without the HUD")
             run(settings)
         else:
-            from inputland.hud import Hud  # loads GTK; only needed with the HUD
+            from inputland.hud import Hud
 
             Hud(args.hud_corner).run(lambda on_status, stop: run(settings, on_status, stop))
     except KeyboardInterrupt:

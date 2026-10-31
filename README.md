@@ -9,14 +9,15 @@ Thumbs up (👍) copies and thumbs down (👎, held a moment longer) pastes, wit
 To scroll, open both palms (🖐️🖐️) and move the hand that was pointing up or down from where it started: the further you move it, the faster it scrolls. Spread the open palms apart to zoom in, bring them together to zoom out (Ctrl+wheel, so most apps zoom around the cursor); the further, the faster. Whichever starts first, scroll or zoom, keeps the gesture until you close either hand to stop.
 Swipe one open palm (🖐️) quickly left or right, with the hand that was pointing, to go to the next or previous workspace, like Hyprland's touchpad swipe (Hyprland only).
 Make a fist (✊) with either hand to pause: the hands are ignored, so you can gesture freely, until you open a palm (🖐️) to resume.
-A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `At edge` when the hand is outside the mapped region, `Paused`) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
+Hold an index fingertip on your forehead for half a second to steer the cursor with your head instead (your nose tip; the cursor starts at the screen center), and again to go back to your hand. Pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
+A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `At edge` when the hand is outside the mapped region, `Paused`, `Head` in head mode) and highlights the one moving the cursor, in your Omarchy theme colors. Poses that do nothing show `-`.
 
 ## Setup
 
 ```sh
 sudo pacman -S gtk4-layer-shell   # HUD overlay (Wayland)
 uv sync                    # Python 3.13 + MediaPipe, OpenCV, evdev, PyGObject
-uv run inputland --preview # first run downloads the gesture model (~8 MB) to ~/.cache/inputland
+uv run inputland --preview # first run downloads the gesture and face models (~12 MB) to ~/.cache/inputland
 ```
 
 ### Permissions
@@ -53,6 +54,7 @@ uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the
 | `--zoom-speed` | `10` | Wheel clicks per second for each unit (log ratio) the gap between the palms changes past the dead zone. |
 | `--zoom-dead-zone` | `0.1` | Change in the gap between the palms (log ratio, about a fraction: 0.1 is ~10%) that does not zoom yet. Raise if scrolling turns into zooming. |
 | `--swipe-distance` | `0.25` | Sideways travel of one open palm (fraction of the frame width), within about a third of a second, that switches workspace. Lower if swipes are missed, raise if a wave switches workspace. |
+| `--head-range` | `0.12` | In head mode: nose travel (fraction of the frame) that crosses the whole screen; half of it from where head mode started reaches an edge. Lower = smaller head movements, more jitter. |
 | `--camera N` | `0` | Use `/dev/videoN`. |
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 
@@ -68,8 +70,8 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 | Module | Role |
 |---|---|
 | `camera.py` | OpenCV V4L2 capture, mirrored frames |
-| `tracking.py` | MediaPipe `GestureRecognizer` → `Hand` (side, gesture, 21 landmarks); model download |
-| `gestures.py` | Pose rules (`is_gesture`, `is_pinching`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
+| `tracking.py` | MediaPipe `GestureRecognizer` → `Hand` (side, gesture, 21 landmarks), `FaceLandmarker` → face landmarks (head mode); model download |
+| `gestures.py` | Pose rules (`is_gesture`, `is_pinching`, `touches_head`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
 | `filters.py` | One Euro filter (jitter vs. lag) |
 | `config.py` | `Settings`, `Region` (camera box → screen) |
 | `pointer.py` | uinput absolute pointer (evdev), plus the copy/paste keys and closing the window |

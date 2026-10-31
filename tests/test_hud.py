@@ -4,7 +4,7 @@ from inputland.app import Status
 
 try:
     from inputland import hud
-except (ImportError, RuntimeError):  # no GTK 4 or gtk4-layer-shell on this machine
+except (ImportError, RuntimeError):
     pytest.skip("needs GTK 4 and gtk4-layer-shell", allow_module_level=True)
 
 
@@ -23,9 +23,11 @@ except (ImportError, RuntimeError):  # no GTK 4 or gtk4-layer-shell on this mach
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), "Scrolling", "Scrolling"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), zooming="Right"), "Zooming", "Zooming"),
         (Status(None, (), paused=True), "Paused", "Paused"),
+        (Status(None, (), head=True), "Head", "Head"),
+        (Status("Right", (("Left", "Pointing_Up"), ("Right", "None")), pressed=True, head=True), "Head", "Pinch"),
     ],
 )
 def test_hud_shows_actions_not_gestures(status, left, right):
     assert hud.describe("Left", status)[0] == left
     assert hud.describe("Right", status)[0] == right
-    assert {left, right} <= set(hud.TEXTS)  # TEXTS sets the fixed width: every text shown must be in it
+    assert {left, right} <= set(hud.TEXTS)

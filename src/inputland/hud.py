@@ -12,41 +12,39 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-# Must be loaded before GTK so GTK's Wayland calls go through layer-shell.
 try:
-    ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)  # the bare .so ships only in -dev packages
+    ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)
 except OSError as e:
     raise RuntimeError("gtk4-layer-shell not found: install it (pacman -S gtk4-layer-shell) or use --no-hud") from e
 
-import cairo  # noqa: E402
-import gi  # noqa: E402
+import cairo
+import gi
 
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
-from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk
+from gi.repository import Gtk4LayerShell as LayerShell
 
-from inputland.app import Status  # noqa: E402
+from inputland.app import Status
 
 log = logging.getLogger(__name__)
 
 Worker = Callable[[Callable[[Status], None], threading.Event], None]
 
-SIDES = ("Left", "Right")  # segment order matches the mirrored camera view
+SIDES = ("Left", "Right")
 
-# What each segment can say: the action, not MediaPipe's gesture name.
 STARTING = "Starting"
-IDLE = "Point to start"  # no hand in view
+IDLE = "Point to start"
 ABSENT = "Not seen"
-IGNORED = "-"  # a pose that does nothing
+IGNORED = "-"
+HEAD = "Head"
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
-    "Scrolling", "Zooming", "Paused",
+    "Scrolling", "Zooming", "Paused", HEAD,
 )
-NAME_CHARS = max(len(t) for t in TEXTS)  # fixed width: the strip never resizes
+NAME_CHARS = max(len(t) for t in TEXTS)
 
-# Used outside Omarchy, or when the theme file is missing a key.
 DEFAULT_COLORS = {"background": "#121212", "foreground": "#e6e6e6", "active_border_color": "#8aa4ff"}
 
 CSS = """
@@ -118,7 +116,7 @@ class Hud:
             raise errors[0]
 
     def _publish(self, status: Status) -> None:
-        GLib.idle_add(self._render, status)  # called from the worker; GTK is not thread-safe
+        GLib.idle_add(self._render, status)
 
     def _build(self, app: Gtk.Application) -> None:
         css = Gtk.CssProvider()
@@ -132,7 +130,6 @@ class Hud:
         for edge in (getattr(LayerShell.Edge, e.upper()) for e in self._corner.split("-")):
             LayerShell.set_anchor(window, edge, True)
             LayerShell.set_margin(window, edge, 12)
-        # Empty input region: clicks pass through to the windows below.
         window.connect("realize", lambda w: w.get_surface().set_input_region(cairo.Region()))
 
         hud = Gtk.Box(spacing=2, css_classes=["hud"])
@@ -141,7 +138,7 @@ class Hud:
             label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3)
             hud.append(label)
             self._segments[side] = label
-        self._render(None)  # until the first frame: model download, camera and GPU start-up
+        self._render(None)
         window.set_child(hud)
         window.present()
         if not LayerShell.is_supported():
@@ -168,10 +165,12 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "Paste", "driving"
     if side == status.closed:
         return "Close", "driving"
-    if status.scrolling:  # both hands make the gesture; highlight the one that scrolls
+    if status.scrolling:
         return "Scrolling", "driving" if side == status.scrolling else "seen"
     if status.zooming:
         return "Zooming", "driving" if side == status.zooming else "seen"
+    if status.head:
+        return ("Pinch", "driving") if side == status.driver and status.pressed else (HEAD, "seen")
     if side == status.driver:
         return "Pinch" if status.pressed else "At edge" if status.edge else "Moving", "driving"
     gesture = dict(status.hands).get(side)

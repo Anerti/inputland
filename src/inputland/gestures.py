@@ -2,7 +2,7 @@ from math import dist
 
 from inputland.tracking import (
     INDEX_PIP, INDEX_TIP, MIDDLE_MCP, MIDDLE_PIP, MIDDLE_TIP, PINKY_PIP, PINKY_TIP, RING_PIP, RING_TIP, THUMB_TIP,
-    WRIST, Hand,
+    WRIST, Face, Hand,
 )
 
 
@@ -18,7 +18,7 @@ def is_pinching(hand: Hand, ratio: float) -> bool:
 
 
 def is_love_sign(hand: Hand) -> bool:
-    """🤟 (or 🤘): index and pinky up, middle and ring folded; the thumb is ignored.
+    """Love-you sign (or horns): index and pinky up, middle and ring folded; the thumb is ignored.
 
     From the landmarks: MediaPipe's own `ILoveYou` label rarely fires. Never a `Pointing_Up` hand, whose relaxed
     pinky can read as up: holding it would close the window while moving the cursor.
@@ -27,12 +27,26 @@ def is_love_sign(hand: Hand) -> bool:
         return False
     lm = hand.landmarks
 
-    def up(tip: int, pip: int) -> bool:  # a folded fingertip curls back nearer the wrist than its middle joint
+    def up(tip: int, pip: int) -> bool:
         return dist(lm[tip], lm[WRIST]) > dist(lm[pip], lm[WRIST])
 
     return up(INDEX_TIP, INDEX_PIP) and up(PINKY_TIP, PINKY_PIP) and not (
         up(MIDDLE_TIP, MIDDLE_PIP) or up(RING_TIP, RING_PIP)
     )
+
+
+def touches_head(hand: Hand, face: Face) -> bool:
+    """Index tip on the forehead: within the face's width, from above the top of the face down to the eyebrows.
+
+    The hand must also be about as far from the camera as the face: a hand pointing at the top of the screen
+    covers the forehead in the image too, but from in front of it, so it looks bigger.
+    """
+    xs, ys = zip(*face)
+    top, height = min(ys), max(ys) - min(ys)
+    lm = hand.landmarks
+    x, y = lm[INDEX_TIP]
+    near_face = dist(lm[WRIST], lm[MIDDLE_MCP]) < 0.9 * (max(xs) - min(xs))
+    return near_face and min(xs) <= x <= max(xs) and top - height / 3 <= y <= top + height / 3
 
 
 def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float, pinch_ratio: float) -> Hand | None:

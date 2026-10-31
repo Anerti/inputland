@@ -13,7 +13,6 @@ class Camera:
             raise RuntimeError(f"cannot open camera {index} (/dev/video{index})")
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        # Freshest frame only: when inference is slower than the camera, a deeper queue serves stale frames.
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     def frames(self) -> Iterator[np.ndarray]:

@@ -3,31 +3,34 @@ import logging
 import os
 import sys
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, Self
 
-# MediaPipe imports sounddevice for audio tasks we don't use. Its PortAudio init loads
-# PipeWire's JACK client, which sets RLIMIT_RTTIME to 0, and the kernel then SIGKILLs us.
-# MediaPipe treats the module as optional.
 sys.modules.setdefault("sounddevice", None)
 
-import cv2  # noqa: E402
-import mediapipe as mp  # noqa: E402
-import numpy as np  # noqa: E402
-from mediapipe.tasks.python import BaseOptions, vision  # noqa: E402
+import cv2
+import mediapipe as mp
+import numpy as np
+from mediapipe.tasks.python import BaseOptions, vision
 
 log = logging.getLogger(__name__)
 
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/"
-    "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"  # pinned: "latest" could change gestures under us
+    "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"
 )
 MODEL_SHA256 = "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
+FACE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+)
+FACE_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
-# MediaPipe hand landmarks
 WRIST = 0
 THUMB_TIP = 4
-INDEX_MCP = 5  # base of the index finger
+INDEX_MCP = 5
 INDEX_PIP = 6
 INDEX_TIP = 8
 MIDDLE_MCP = 9
@@ -38,48 +41,44 @@ RING_TIP = 16
 PINKY_PIP = 18
 PINKY_TIP = 20
 OTHER_SIDE = {"Left": "Right", "Right": "Left"}
+NOSE_TIP = 1
+
+Face = tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True)
 class Hand:
-    side: str  # the user's real hand: "Left" / "Right"
-    gesture: str  # MediaPipe canned gesture, e.g. "Pointing_Up"; "None" if unrecognized
+    side: str
+    gesture: str
     score: float
-    landmarks: tuple[tuple[float, float], ...]  # 21 (x, y) points, normalized 0..1
+    landmarks: tuple[tuple[float, float], ...]
 
 
-def ensure_model() -> Path:
-    """Return the cached gesture model, downloading it on first run or when MODEL_SHA256 no longer matches it."""
+def ensure_model(url: str, sha256: str) -> Path:
+    """Return the cached model at `url`, downloading it on first run or when `sha256` no longer matches it."""
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "inputland"
-    path = cache / "gesture_recognizer.task"
-    # Checked on every start (~10 ms): a model bump or a damaged file gets downloaded again.
-    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == MODEL_SHA256:
+    path = cache / url.rsplit("/", 1)[1]
+    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == sha256:
         return path
-    log.info("downloading gesture model to %s", path)
+    log.info("downloading model to %s", path)
     cache.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(MODEL_URL, timeout=30) as response:  # a stalled download fails instead of hanging
+    with urllib.request.urlopen(url, timeout=30) as response:
         data = response.read()
-    # A captive portal or proxy can answer with a page instead; caching it would break every later start.
-    if hashlib.sha256(data).hexdigest() != MODEL_SHA256:
-        raise RuntimeError(f"gesture model download from {MODEL_URL} failed its checksum; check the network and retry")
+    if hashlib.sha256(data).hexdigest() != sha256:
+        raise RuntimeError(f"model download from {url} failed its checksum; check the network and retry")
     tmp = path.with_suffix(".part")
     tmp.write_bytes(data)
-    tmp.rename(path)  # atomic: an interrupted download never looks like a valid model
+    tmp.rename(path)
     return path
 
 
-class HandTracker:
-    def __init__(self, model: Path, max_hands: int = 2) -> None:
-        # GPU first: on a throttled CPU (battery, power-saver) inference overruns the 33 ms frame budget
-        # and the cursor stutters; the GPU stays at ~16 ms.
+class _VideoTask:
+    """A MediaPipe task in VIDEO mode, made by `create` from the base options."""
+
+    def __init__(self, model: Path, create: Callable[[BaseOptions], Any]) -> None:
         for delegate in (BaseOptions.Delegate.GPU, BaseOptions.Delegate.CPU):
-            options = vision.GestureRecognizerOptions(
-                base_options=BaseOptions(model_asset_path=str(model), delegate=delegate),
-                running_mode=vision.RunningMode.VIDEO,
-                num_hands=max_hands,
-            )
             try:
-                self._recognizer = vision.GestureRecognizer.create_from_options(options)
+                self._task = create(BaseOptions(model_asset_path=str(model), delegate=delegate))
                 break
             except RuntimeError as e:
                 if delegate == BaseOptions.Delegate.CPU:
@@ -87,19 +86,36 @@ class HandTracker:
                 log.warning("GPU unavailable, tracking on the CPU (the cursor may stutter): %s", str(e)[:200])
         self._last_ts = -1
 
-    def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> list[Hand]:
-        # VIDEO mode rejects timestamps that do not strictly increase.
+    def _image(self, frame_bgr: np.ndarray, timestamp_ms: int) -> tuple[mp.Image, int]:
         self._last_ts = max(timestamp_ms, self._last_ts + 1)
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        result = self._recognizer.recognize_for_video(
-            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), self._last_ts
-        )
+        return mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), self._last_ts
+
+    def close(self) -> None:
+        self._task.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+class HandTracker(_VideoTask):
+    def __init__(self, model: Path, max_hands: int = 2) -> None:
+        super().__init__(model, lambda base: vision.GestureRecognizer.create_from_options(
+            vision.GestureRecognizerOptions(
+                base_options=base, running_mode=vision.RunningMode.VIDEO, num_hands=max_hands,
+            )
+        ))
+
+    def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> list[Hand]:
+        result = self._task.recognize_for_video(*self._image(frame_bgr, timestamp_ms))
         hands = []
         for handedness, gestures, landmarks in zip(result.handedness, result.gestures, result.hand_landmarks):
             top = gestures[0] if gestures else None
             hands.append(
                 Hand(
-                    # On our mirrored frames MediaPipe names the opposite hand (verified on real hands).
                     side=OTHER_SIDE[handedness[0].category_name],
                     gesture=top.category_name if top else "None",
                     score=top.score if top else 0.0,
@@ -107,16 +123,17 @@ class HandTracker:
                 )
             )
         if len(hands) == 2 and hands[0].side == hands[1].side:
-            # MediaPipe sometimes names both hands the same; on the mirrored frame the left hand is on the left.
             hands.sort(key=lambda h: h.landmarks[INDEX_MCP][0])
             hands = [replace(h, side=side) for h, side in zip(hands, ("Left", "Right"))]
         return hands
 
-    def close(self) -> None:
-        self._recognizer.close()
 
-    def __enter__(self) -> "HandTracker":
-        return self
+class FaceTracker(_VideoTask):
+    def __init__(self, model: Path) -> None:
+        super().__init__(model, lambda base: vision.FaceLandmarker.create_from_options(
+            vision.FaceLandmarkerOptions(base_options=base, running_mode=vision.RunningMode.VIDEO, num_faces=1)
+        ))
 
-    def __exit__(self, *exc: object) -> None:
-        self.close()
+    def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> Face | None:
+        result = self._task.detect_for_video(*self._image(frame_bgr, timestamp_ms))
+        return tuple((lm.x, lm.y) for lm in result.face_landmarks[0]) if result.face_landmarks else None

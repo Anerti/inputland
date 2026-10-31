@@ -1,8 +1,9 @@
 from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from hands import hand, love, pinch, point
+from hands import face, hand, love, pinch, point
 
 from inputland import app
 from inputland.config import Settings
@@ -10,10 +11,13 @@ from inputland.config import Settings
 
 @pytest.fixture
 def devices(monkeypatch):
-    """Fake camera, tracker and pointer. Set `.script` to the hands seen per frame; outputs land in `.events`."""
+    """Fake camera, trackers and pointer. Set `.script` to the hands seen per frame (`.faces`: the face, if any);
+    outputs land in `.events`, the frames the face was looked for in `.face_frames`."""
 
     class Fake:
         script: list = []
+        faces: list = []
+        face_frames: list = []
         events: list = []
 
         def frames(self):
@@ -56,33 +60,34 @@ def devices(monkeypatch):
             self.events.append("unzoom")
 
     fake = Fake()
-    monkeypatch.setattr(app, "ensure_model", lambda: Path("model"))
+    monkeypatch.setattr(app, "ensure_model", lambda *a: Path("model"))
     for name in ("Camera", "HandTracker", "VirtualPointer"):
         monkeypatch.setattr(app, name, lambda *a: nullcontext(fake))
+    def detect_face(frame, ts):
+        fake.face_frames.append(frame)
+        return fake.faces[frame] if fake.faces else None
+
+    monkeypatch.setattr(app, "FaceTracker", lambda *a: nullcontext(SimpleNamespace(detect=detect_face)))
     return fake
 
 
 def test_run_engages_switches_hands_and_releases(devices):
-    left, right = point("Left", 0.5, 0.45), point("Right", 0.75, 0.7)  # -> screen (0.5, 0.5) and (1, 1)
+    left, right = point("Left", 0.5, 0.45), point("Right", 0.75, 0.7)
     devices.script = [[], [left], [left], [left, right], [right], [], []]
 
     statuses = []
     app.run(Settings(engage_frames=1, release_frames=2), statuses.append)
 
-    # Both pointing: the left hand keeps control; a lone right hand takes over; the cursor stays through one empty frame.
     assert [s.driver for s in statuses] == [None, "Left", "Left", "Right", "Right", None]
-    # The switch resets the filter, so the cursor jumps to the right hand instead of gliding from the left one.
     assert [c for m in devices.events for c in m] == pytest.approx([0.5, 0.5] * 3 + [1.0, 1.0])
 
 
 def test_pinch_holds_the_button_to_drag(devices):
     p, o, moved = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45), pinch("Right", 0.75, 0.7)
-    # Pinch without pointing first, then point, pinch and move, open, pinch again.
     devices.script = [[p], [o], [p], [moved], [o], [p]]
 
     app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1))
 
-    # Nothing before the hand pointed; the button stays down while the pinching hand moves the cursor.
     labels = [e if isinstance(e, str) else "move" for e in devices.events]
     assert labels == ["move", "move", "down", "move", "move", "up", "move", "down"]
     assert devices.events[3] != devices.events[1]
@@ -99,7 +104,6 @@ def test_hand_leaving_mid_drag_releases_the_button(devices):
 
 def test_switching_hands_mid_drag_releases_before_moving(devices):
     o, p, other = point("Left", 0.3, 0.3), pinch("Left", 0.3, 0.3), point("Right", 0.7, 0.7)
-    # The left hand drags while the right one points, then the left leaves: the drag must not end at the right hand.
     devices.script = [[o], [p, other], [other], [other]]
 
     app.run(Settings(engage_frames=1, release_frames=5, pinch_frames=1))
@@ -119,7 +123,6 @@ def test_drag_survives_a_short_tracking_dropout(devices):
 
 def test_victory_right_clicks_once_after_pointing(devices):
     o, v = point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="Victory")
-    # A ✌️ before pointing and the other hand's ✌️ do nothing; a held ✌️ clicks once.
     devices.script = [[v], [o], [hand("Left", 0.2, 0.2, gesture="Victory")], [v], [v], [o], [v]]
 
     app.run(Settings(engage_frames=1, release_frames=1))
@@ -131,7 +134,6 @@ def test_victory_right_clicks_once_after_pointing(devices):
 def test_thumbs_up_copies_and_held_thumbs_down_pastes_after_pointing(devices):
     o = point("Right", 0.5, 0.45)
     up, down = hand("Right", 0.5, 0.45, gesture="Thumb_Up"), hand("Right", 0.5, 0.45, gesture="Thumb_Down")
-    # A 👍 before pointing and the other hand's 👍 do nothing; a held 👍 copies once; a 1-frame 👎 is too short.
     devices.script = [[up], [o], [hand("Left", 0.2, 0.2, gesture="Thumb_Up")], [up], [up], [down], [o], [down], [down]]
 
     statuses = []
@@ -143,7 +145,6 @@ def test_thumbs_up_copies_and_held_thumbs_down_pastes_after_pointing(devices):
 
 def test_held_love_closes_once_after_pointing(devices):
     o, l = point("Right", 0.5, 0.45), love("Right", 0.5, 0.45)
-    # A 🤟 before pointing does nothing; a 2-frame 🤟 is too short; a held one closes once.
     devices.script = [[l], [l], [l], [o], [l], [l], [o], [l], [l], [l], [l]]
 
     statuses = []
@@ -154,7 +155,6 @@ def test_held_love_closes_once_after_pointing(devices):
 
 
 def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
-    # A pinch is the pointing pose plus the thumb, so a relaxed pinky reads as 🤟 for as long as the drag lasts.
     devices.script = [[point("Right", 0.5, 0.45)]] + [[love("Right", 0.5, 0.45, pinch="left")]] * 5
 
     app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1, close_frames=3))
@@ -166,9 +166,6 @@ def test_one_open_palm_swipe_switches_workspace_after_pointing(devices):
     def palm(x):
         return [hand("Right", x, 0.45, gesture="Open_Palm")]
 
-    # A swipe before pointing does nothing; a left swipe goes to the next workspace, and swinging back right during
-    # the cooldown does not undo it; a slow drift does nothing; a right swipe goes back; two palms never swipe, nor
-    # does a palm next to the other hand (two palms opening, before MediaPipe sees the second one as a palm).
     other = hand("Left", 0.2, 0.45, gesture="None")
     devices.script = [
         palm(0.6), palm(0.3), [point("Right", 0.5, 0.45)], palm(0.6), palm(0.3), palm(0.3), palm(0.6),
@@ -184,7 +181,6 @@ def test_one_open_palm_swipe_switches_workspace_after_pointing(devices):
 
 
 def test_switching_hands_is_not_a_swipe(devices):
-    # The right palm on the right, then the left hand points and opens on the left: neither palm moved.
     devices.script = [
         [point("Right", 0.7, 0.45)], [hand("Right", 0.7, 0.45, gesture="Open_Palm")],
         [point("Left", 0.3, 0.45)], [hand("Left", 0.3, 0.45, gesture="Open_Palm")],
@@ -197,20 +193,17 @@ def test_switching_hands_is_not_a_swipe(devices):
 
 def test_slow_pinch_takes_control_back_until_the_hand_leaves(devices):
     p, o, half = pinch("Right", 0.5, 0.45), point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="None")
-    # Half-closed pinch drops the driver, the finished pinch still presses; after the hand leaves it must point again.
     devices.script = [[o], [half], [p], [], [o], [], [p]]
 
     app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1))
 
     assert devices.events.count("down") == 1
-    assert devices.events.index("down") == 2  # move (pointing), move (pinch re-engaged), down
+    assert devices.events.index("down") == 2
 
 
 @pytest.mark.parametrize("gap", ["Pointing_Up", "None"])
 def test_quick_double_pinch_presses_twice(devices, gap):
     o, p, opened = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture=gap)
-    # Opening for 2 frames is shorter than release_frames: the pinch has its own, shorter debounce. MediaPipe may
-    # not call the half-open hand pointing yet; it is in view and not pinching, so the button still goes up.
     devices.script = [[o]] * 3 + [[p], [p], [opened], [opened], [p], [p]]
 
     app.run(Settings(engage_frames=3, release_frames=5, pinch_frames=2))
@@ -237,8 +230,6 @@ def test_two_open_palms_scroll_with_the_last_driver(devices):
     def palms(y):
         return [hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.5, y, gesture="Open_Palm")]
 
-    # Palms before pointing do nothing; then anchor, move up, back into the dead zone, down; one palm stops it.
-    # A frame with no hands mid-scroll does not end it.
     one_palm = [palms(0.3)[1]]
     devices.script = [palms(0.3), [o], palms(0.45), palms(0.3), [], palms(0.47), palms(0.6), one_palm, one_palm]
 
@@ -246,7 +237,7 @@ def test_two_open_palms_scroll_with_the_last_driver(devices):
     app.run(Settings(engage_frames=1, release_frames=2, scroll_dead_zone=0.05), statuses.append)
 
     scrolls = [e[1] for e in devices.events if isinstance(e, tuple) and e[0] == "scroll"]
-    assert [s > 0 for s in scrolls] == [True, False]  # hand up scrolls up, hand down scrolls down
+    assert [s > 0 for s in scrolls] == [True, False]
     assert [s.scrolling for s in statuses] == [None, None, *["Right"] * 5, None]
 
 
@@ -262,7 +253,6 @@ def _palm_events(events):
 def test_open_palms_spread_zooms_and_lock_out_scrolling(devices):
     o = point("Right", 0.5, 0.45)
     one_palm = [palms(0.4, 0.6)[1]]
-    # Anchor at a 0.2 gap, spread, then move up (locked to zoom: no scroll), close in; one palm lets Ctrl go.
     devices.script = [
         [o], palms(0.4, 0.6), palms(0.3, 0.7), palms(0.3, 0.7, y=0.2), palms(0.45, 0.55), one_palm, one_palm,
     ]
@@ -272,7 +262,7 @@ def test_open_palms_spread_zooms_and_lock_out_scrolling(devices):
 
     assert _palm_events(devices.events) == [("zoom", True), ("zoom", True), ("zoom", False), "unzoom"]
     pairs = [(s.scrolling, s.zooming) for s in statuses if s.scrolling or s.zooming]
-    assert list(dict.fromkeys(pairs)) == [("Right", None), (None, "Right")]  # undecided shows as scrolling
+    assert list(dict.fromkeys(pairs)) == [("Right", None), (None, "Right")]
 
 
 def test_open_palms_scrolling_first_does_not_zoom(devices):
@@ -287,7 +277,6 @@ def test_open_palms_scrolling_first_does_not_zoom(devices):
 def test_a_fist_pauses_until_an_open_palm(devices):
     o, p = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45)
     fist, palm = hand("Left", 0.3, 0.45, gesture="Closed_Fist"), hand("Left", 0.3, 0.45, gesture="Open_Palm")
-    # The other hand's fist mid-drag lets the button go; pointing while paused does nothing; a palm resumes.
     devices.script = [[o], [p], [p, fist], [o], [palm], [o]]
 
     statuses = []
@@ -307,7 +296,7 @@ def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):
     app.run(Settings(engage_frames=1, release_frames=1), statuses.append)
 
     assert [s.paused for s in statuses] == [False, True, False, False]
-    assert [e for e in devices.events if not isinstance(e, str)]  # the cursor moves again
+    assert [e for e in devices.events if not isinstance(e, str)]
 
 
 def test_closing_a_hand_to_stop_scrolling_does_not_pause(devices):
@@ -333,3 +322,32 @@ def test_settings_reject_filter_values_that_break_smoothing():
         Settings(scroll_speed=0)
     with pytest.raises(ValueError):
         Settings(zoom_dead_zone=1)
+
+
+def test_touching_the_forehead_toggles_head_pointing(devices):
+    still, turned = face(0.5, 0.3), face(0.6, 0.3)
+    touch, low = point("Right", 0.5, 0.25), pinch("Right", 0.3, 0.6)
+    devices.script = [[touch], [touch], [low], [], [touch], [touch]]
+    devices.faces = [still, still, turned, turned, still, still]
+
+    statuses = []
+    settings = Settings(head_touch_frames=2, head_range=0.2, engage_frames=1, release_frames=1, pinch_frames=1)
+    app.run(settings, statuses.append)
+
+    labels = [e if isinstance(e, str) else "move" for e in devices.events]
+    assert labels == ["move", "move", "move", "down", "move", "up", "move", "move"]
+    assert devices.events[0] == pytest.approx((0.5, 0.1))
+    assert devices.events[1] == pytest.approx((0.5, 0.5))
+    assert devices.events[2][0] > 0.5
+    assert devices.events[-1] == pytest.approx((0.5, 0.1))
+    assert [s.head for s in statuses] == [False, True, True, True, True, False]
+
+
+def test_face_is_checked_every_third_frame_with_a_hand_until_head_pointing(devices):
+    touch = point("Right", 0.5, 0.25)
+    devices.script = [[]] * 3 + [[touch]] * 4 + [[]] * 3
+    devices.faces = [face(0.5, 0.3)] * 10
+
+    app.run(Settings(head_touch_frames=2, engage_frames=1, release_frames=1))
+
+    assert devices.face_frames == [3, 5, 6, 7, 8, 9]

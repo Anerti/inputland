@@ -1,19 +1,19 @@
 from pathlib import Path
 
 import pytest
-from hands import hand, love, pinch, point
+from hands import face, hand, love, pinch, point
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
-from inputland.gestures import Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand
-from inputland.tracking import Hand
+from inputland.gestures import Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, touches_head
+from inputland.tracking import WRIST, Hand
 
 
 def test_region_maps_box_to_screen_and_clamps():
     r = Region(0.25, 0.2, 0.75, 0.7)
     assert r.normalize(0.25, 0.2) == (0.0, 0.0)
     assert r.normalize(0.5, 0.45) == pytest.approx((0.5, 0.5))
-    assert r.normalize(0.0, 1.0) == (0.0, 1.0)  # outside the box sticks to the edge
+    assert r.normalize(0.0, 1.0) == (0.0, 1.0)
 
 
 def test_region_rejects_inverted_box():
@@ -26,7 +26,7 @@ def test_one_euro_holds_constant_and_converges():
     assert f(0.5, 0.0) == 0.5
     assert f(0.5, 1 / 30) == 0.5
     t, x = 1 / 30, 0.5
-    for _ in range(90):  # 3 s after a jump to 0.9
+    for _ in range(90):
         t += 1 / 30
         x = f(0.9, t)
     assert x == pytest.approx(0.9, abs=1e-3)
@@ -35,7 +35,7 @@ def test_one_euro_holds_constant_and_converges():
 def test_one_euro_smooths_jitter_and_resets():
     f = OneEuroFilter(min_cutoff=1.0, beta=0.0)
     out = [f(0.5 + (0.01 if i % 2 else -0.01), i / 30) for i in range(60)]
-    assert max(out[30:]) - min(out[30:]) < 0.01  # input swings 0.02
+    assert max(out[30:]) - min(out[30:]) < 0.01
     f.reset()
     assert f(0.1, 10.0) == 0.1
 
@@ -58,29 +58,28 @@ def test_pick_pointer_hand_accepts_either_hand_and_keeps_the_driver():
     left, right = Hand("Left", "Pointing_Up", 0.9, lm), Hand("Right", "Pointing_Up", 0.9, lm)
     palm = Hand("Right", "Open_Palm", 0.9, lm)
     assert pick_pointer_hand([left, palm], None, 0.5, 0.35) is left
-    assert pick_pointer_hand([right, left], "Left", 0.5, 0.35) is left  # both point: driver keeps control
+    assert pick_pointer_hand([right, left], "Left", 0.5, 0.35) is left
     assert pick_pointer_hand([right, left], None, 0.5, 0.35) is right
     assert pick_pointer_hand([palm], "Right", 0.5, 0.35) is None
 
 
 def test_is_pinching_scales_with_hand_size():
     assert is_pinching(pinch("Right", 0.5, 0.5), 0.35)
-    assert not is_pinching(point("Right", 0.5, 0.5), 0.35)  # thumb resting on the folded fingers
-    assert not is_pinching(pinch("Right", 0.5, 0.5, button="right"), 0.35)  # thumb on the middle finger
+    assert not is_pinching(point("Right", 0.5, 0.5), 0.35)
+    assert not is_pinching(pinch("Right", 0.5, 0.5, button="right"), 0.35)
 
 
 def test_love_sign_needs_index_and_pinky_up_middle_and_ring_folded():
     assert is_love_sign(love("Right", 0.5, 0.5))
-    assert not is_love_sign(point("Right", 0.5, 0.5))  # pinky folded
-    assert not is_love_sign(hand("Right", 0.5, 0.5, pinch="right"))  # middle finger up
-    # Pointing with a relaxed pinky looks the same from the landmarks; holding it must not close the window.
+    assert not is_love_sign(point("Right", 0.5, 0.5))
+    assert not is_love_sign(hand("Right", 0.5, 0.5, pinch="right"))
     assert not is_love_sign(Hand("Right", "Pointing_Up", 0.9, love("Right", 0.5, 0.5).landmarks))
 
 
 def test_only_the_driver_keeps_control_while_pinching():
     hand = pinch("Left", 0.5, 0.5)
     assert pick_pointer_hand([hand], "Left", 0.5, 0.35) is hand
-    assert pick_pointer_hand([hand], None, 0.5, 0.35) is None  # must point first
+    assert pick_pointer_hand([hand], None, 0.5, 0.35) is None
     assert pick_pointer_hand([hand], "Right", 0.5, 0.35) is None
 
 
@@ -98,7 +97,7 @@ def test_tracker_falls_back_to_cpu_without_gpu(monkeypatch):
     monkeypatch.setattr(tracking.vision.GestureRecognizer, "create_from_options", create)
     tracker = tracking.HandTracker(Path("model"))
     assert tried == [tracking.BaseOptions.Delegate.GPU, tracking.BaseOptions.Delegate.CPU]
-    assert tracker._recognizer == "cpu recognizer"
+    assert tracker._task == "cpu recognizer"
 
 
 def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
@@ -109,7 +108,7 @@ def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
     from inputland import tracking
 
     seen = []
-    xs = [0.5]  # one hand per x
+    xs = [0.5]
 
     class Recognizer:
         def recognize_for_video(self, image, ts):
@@ -125,10 +124,10 @@ def test_tracker_swaps_sides_and_forces_increasing_timestamps(monkeypatch):
     frame = np.zeros((4, 4, 3), np.uint8)
     [hand] = tracker.detect(frame, 100)
     tracker.detect(frame, 100)
-    assert hand.side == "Right"  # mirrored frames: MediaPipe names the opposite hand
+    assert hand.side == "Right"
     assert seen == [100, 101]
 
-    xs[:] = [0.7, 0.2]  # both named the same: the hand on the left of the mirrored frame is the left one
+    xs[:] = [0.7, 0.2]
     assert [(h.side, h.landmarks[0][0]) for h in tracker.detect(frame, 200)] == [("Left", 0.2), ("Right", 0.7)]
 
 
@@ -169,7 +168,7 @@ def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(uinput):
         uinput.scroll(notches)
 
     hi = ecodes.REL_WHEEL_HI_RES
-    assert uinput.writes == [(hi, 60), (hi, 72), (ecodes.REL_WHEEL, 1), (hi, -35)]  # the 0.004 is kept, not lost
+    assert uinput.writes == [(hi, 60), (hi, 72), (ecodes.REL_WHEEL, 1), (hi, -35)]
 
 
 def test_pointer_close_lets_go_of_button_and_ctrl(uinput):
@@ -206,13 +205,13 @@ def test_pointer_close_window_on_hyprland_falls_back_to_killactive(uinput, monke
 
     def hyprctl(args, **kw):
         calls.append(args[-1])
-        ok = args[-1] == "killactive" or lua  # pre-Lua Hyprland rejects the Lua dispatcher
+        ok = args[-1] == "killactive" or lua
         return subprocess.CompletedProcess(args, 0, "ok" if ok else "Invalid dispatcher", "")
 
     monkeypatch.setenv("HYPRLAND_INSTANCE_SIGNATURE", "x")
     monkeypatch.setattr(pointer.subprocess, "run", hyprctl)
     uinput.close_window()
-    assert calls == tried and uinput.writes == []  # no Alt+F4 on Hyprland
+    assert calls == tried and uinput.writes == []
 
 
 def test_pointer_close_window_survives_missing_hyprctl(uinput, monkeypatch):
@@ -236,7 +235,7 @@ def test_pointer_close_window_sends_alt_f4_only_in_a_graphical_session(uinput, m
     if display:
         monkeypatch.setenv("WAYLAND_DISPLAY", display)
     uinput.close_window()
-    assert (uinput.writes[:1] == [(ecodes.KEY_LEFTALT, 1)]) is closes  # on the TTY Alt+F4 would switch to tty4
+    assert (uinput.writes[:1] == [(ecodes.KEY_LEFTALT, 1)]) is closes
 
 
 def test_pointer_zoom_does_not_inherit_scroll_leftovers(uinput):
@@ -247,7 +246,7 @@ def test_pointer_zoom_does_not_inherit_scroll_leftovers(uinput):
     uinput.stop_zoom()
     uinput.scroll(20 / 120)
 
-    assert (ecodes.REL_WHEEL, 1) not in uinput.writes  # 100 + 20 units would make a wheel click with Ctrl down
+    assert (ecodes.REL_WHEEL, 1) not in uinput.writes
 
 
 def test_model_download_with_bad_checksum_is_not_cached(monkeypatch, tmp_path):
@@ -258,11 +257,11 @@ def test_model_download_with_bad_checksum_is_not_cached(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"<html>login</html>"))
     with pytest.raises(RuntimeError, match="checksum"):
-        tracking.ensure_model()
+        tracking.ensure_model(tracking.MODEL_URL, tracking.MODEL_SHA256)
     assert not list((tmp_path / "inputland").iterdir())
 
-    monkeypatch.setattr(tracking, "MODEL_SHA256", tracking.hashlib.sha256(b"<html>login</html>").hexdigest())
-    assert tracking.ensure_model().read_bytes() == b"<html>login</html>"
+    digest = tracking.hashlib.sha256(b"<html>login</html>").hexdigest()
+    assert tracking.ensure_model(tracking.MODEL_URL, digest).read_bytes() == b"<html>login</html>"
 
 
 def test_cached_model_is_downloaded_again_when_its_checksum_changes(monkeypatch, tmp_path):
@@ -273,14 +272,37 @@ def test_cached_model_is_downloaded_again_when_its_checksum_changes(monkeypatch,
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     (tmp_path / "inputland").mkdir()
     (tmp_path / "inputland/gesture_recognizer.task").write_bytes(b"old model")
-    monkeypatch.setattr(tracking, "MODEL_SHA256", tracking.hashlib.sha256(b"new model").hexdigest())
+    digest = tracking.hashlib.sha256(b"new model").hexdigest()
     monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"new model"))
-    # A model bump (or a damaged file) replaces the cached copy...
-    assert tracking.ensure_model().read_bytes() == b"new model"
+    assert tracking.ensure_model(tracking.MODEL_URL, digest).read_bytes() == b"new model"
 
     def offline(url, timeout):
         raise OSError("offline")
 
     monkeypatch.setattr(tracking.urllib.request, "urlopen", offline)
-    # ...and a cached copy that matches is used without the network.
-    assert tracking.ensure_model().read_bytes() == b"new model"
+    assert tracking.ensure_model(tracking.MODEL_URL, digest).read_bytes() == b"new model"
+
+
+def test_index_tip_on_the_forehead_touches_the_head():
+    head = face(0.5, 0.3)
+    assert touches_head(point("Right", 0.5, 0.25), head)
+    assert not touches_head(point("Right", 0.5, 0.4), head)
+    assert not touches_head(point("Right", 0.5, 0.6), head)
+    assert not touches_head(point("Right", 0.75, 0.25), head)
+    near = list(point("Right", 0.5, 0.25).landmarks)
+    near[WRIST] = (0.5, 0.45)
+    assert not touches_head(Hand("Right", "Pointing_Up", 0.9, tuple(near)), head)
+
+
+def test_face_model_is_cached_next_to_the_hand_model(monkeypatch, tmp_path):
+    import io
+
+    from inputland import tracking
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"face model"))
+    digest = tracking.hashlib.sha256(b"face model").hexdigest()
+
+    path = tracking.ensure_model(tracking.FACE_MODEL_URL, digest)
+
+    assert path.name == "face_landmarker.task" and path.read_bytes() == b"face model"
