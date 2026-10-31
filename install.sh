@@ -99,13 +99,14 @@ install_desktop() {
     return
   fi
   mkdir -p "$(dirname "$DESKTOP")"
+  # systemd-run: Omarchy's menu has RLIMIT_RTTIME 0, which children inherit and the kernel SIGKILLs MediaPipe for.
   cat >"$DESKTOP" <<EOF
 $LAUNCHER_MARK
 [Desktop Entry]
 Type=Application
 Name=inputland
 Comment=Control the mouse with hand gestures
-Exec="$LAUNCHER"
+Exec=systemd-run --user --collect "$LAUNCHER"
 Icon=input-mouse
 Terminal=false
 Categories=Utility;Accessibility;
