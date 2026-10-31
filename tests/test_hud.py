@@ -22,6 +22,7 @@ except (ImportError, RuntimeError, ValueError):
         (Status(None, (("Right", "ILoveYou"),), action=("Right", "Close")), "Not seen", "Close"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), "Scrolling", "Scrolling"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), zooming="Right"), "Zooming", "Zooming"),
+        (Status(None, (("Left", "Open_Palm"), ("Right", "None")), adjusting=("Right", "Volume")), "Volume", "Volume"),
         (Status(None, (), paused=True), "Paused", "Paused"),
         (Status(None, (), head=True), "Head", "Head"),
         (Status("Right", (("Left", "Pointing_Up"), ("Right", "None")), pressed=True, head=True), "Head", "Pinch"),

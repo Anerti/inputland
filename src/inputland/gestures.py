@@ -49,6 +49,20 @@ def touches_head(hand: Hand, face: Face) -> bool:
     return near_face and min(xs) <= x <= max(xs) and top - height / 3 <= y <= top + height / 3
 
 
+def find_grabber(hands: list[Hand], min_score: float, pinch_ratio: float) -> Hand | None:
+    """The pinching hand while the other hand holds an open palm (the volume / brightness slider), else None.
+
+    The palm must not pinch too: a pinch with the other fingers up can read as `Open_Palm`.
+    """
+    if len(hands) != 2:
+        return None
+    return next((
+        grab for grab, palm in (hands, hands[::-1])
+        if is_pinching(grab, pinch_ratio) and is_gesture(palm, "Open_Palm", min_score)
+        and not is_pinching(palm, pinch_ratio)
+    ), None)
+
+
 def pick_pointer_hand(hands: list[Hand], driver: str | None, min_score: float, pinch_ratio: float) -> Hand | None:
     """The pointing hand that moves the cursor. If both point, the current `driver` side keeps control.
 

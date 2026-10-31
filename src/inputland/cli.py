@@ -43,6 +43,10 @@ def main() -> None:
         help="sideways travel (fraction of frame width) of one open palm that switches workspace",
     )
     parser.add_argument(
+        "--slider-step", type=float, default=defaults.slider_step,
+        help="travel (fraction of the frame) of the pinching hand, other palm open, per volume / brightness step",
+    )
+    parser.add_argument(
         "--head-range", type=float, default=defaults.head_range,
         help="nose travel (fraction of the frame) that crosses the screen in head mode (index finger on the forehead)",
     )
@@ -70,6 +74,7 @@ def main() -> None:
             zoom_speed=args.zoom_speed,
             zoom_dead_zone=args.zoom_dead_zone,
             swipe_distance=args.swipe_distance,
+            slider_step=args.slider_step,
             head_range=args.head_range,
             preview=args.preview,
         )

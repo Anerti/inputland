@@ -59,6 +59,9 @@ def devices(monkeypatch):
         def stop_zoom(self):
             self.events.append("unzoom")
 
+        def adjust(self, setting, steps):
+            self.events.append((setting, steps))
+
     fake = Fake()
     monkeypatch.setattr(app, "ensure_model", lambda *a: Path("model"))
     for name in ("Camera", "HandTracker", "VirtualPointer"):
@@ -354,3 +357,55 @@ def test_face_is_checked_every_third_frame_with_a_hand_until_head_pointing(devic
     app.run(Settings(head_touch_frames=2, engage_frames=1, release_frames=1))
 
     assert devices.face_frames == [3, 5, 6, 7, 8, 9]
+
+
+def _slider_events(events):
+    return [e for e in events if isinstance(e, str) or e[0] in ("volume", "brightness")]
+
+
+def test_palm_and_pinch_slide_volume_without_clicking_or_moving(devices):
+    o, palm = point("Right", 0.5, 0.45), hand("Left", 0.3, 0.45, gesture="Open_Palm")
+    moves = [(0.5, 0.45), (0.5, 0.33), (0.5, 0.36), (0.7, 0.33), (0.5, 0.52)]
+    devices.script = [[o], *[[palm, pinch("Right", x, y)] for x, y in moves], [o]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1, slider_step=0.05), statuses.append)
+
+    assert _slider_events(devices.events) == [("volume", 2), ("volume", -3)]
+    assert len([e for e in devices.events if isinstance(e, tuple) and isinstance(e[0], float)]) == 2
+    assert [s.adjusting for s in statuses] == [None, ("Right", "Slider"), ("Right", "Volume"), None]
+
+
+def test_pinch_beside_the_driver_palm_slides_brightness_without_pausing(devices):
+    o, palm = point("Right", 0.6, 0.45), hand("Right", 0.6, 0.45, gesture="Open_Palm")
+    curled = hand("Left", 0.38, 0.4, gesture="Closed_Fist", pinch="left")
+    devices.script = [[o], [palm, pinch("Left", 0.3, 0.45)], [palm, pinch("Left", 0.38, 0.4)], [curled]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1, slider_step=0.03), statuses.append)
+
+    assert _slider_events(devices.events) == [("brightness", 2)]
+    assert not any(s.paused for s in statuses)
+
+
+def test_a_drag_started_before_the_palm_stays_a_drag(devices):
+    o, p, palm = point("Right", 0.5, 0.45), pinch("Right", 0.5, 0.45), hand("Left", 0.3, 0.45, gesture="Open_Palm")
+    devices.script = [[o], [p], [palm, p], [palm, pinch("Right", 0.5, 0.3)]]
+
+    app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1, slider_step=0.05))
+
+    assert _slider_events(devices.events) == ["down"]
+
+
+def test_a_curled_grab_does_not_pause_nor_click_until_the_pinch_opens(devices):
+    o, palm = point("Right", 0.5, 0.45), hand("Left", 0.3, 0.45, gesture="Open_Palm")
+    curled = hand("Right", 0.5, 0.45, gesture="Closed_Fist", pinch="left")
+    p = pinch("Right", 0.5, 0.45)
+    devices.script = [[o], [palm, curled], [palm, curled], [curled], [], [curled], [o], [p]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=2, pinch_frames=1), statuses.append)
+
+    assert not any(s.paused for s in statuses)
+    assert _slider_events(devices.events) == ["down"]
+    assert devices.events[-1] == "down"

@@ -8,6 +8,10 @@ from evdev import AbsInfo, UInput, UInputError, ecodes
 log = logging.getLogger(__name__)
 
 ABS_MAX = 32767
+MEDIA_KEYS = {
+    "volume": (ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN),
+    "brightness": (ecodes.KEY_BRIGHTNESSUP, ecodes.KEY_BRIGHTNESSDOWN),
+}
 
 
 class VirtualPointer:
@@ -23,7 +27,7 @@ class VirtualPointer:
             ecodes.EV_ABS: [(ecodes.ABS_X, axis), (ecodes.ABS_Y, axis)],
             ecodes.EV_KEY: [
                 ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.KEY_LEFTCTRL, ecodes.KEY_LEFTSHIFT, ecodes.KEY_INSERT,
-                ecodes.KEY_LEFTALT, ecodes.KEY_F4,
+                ecodes.KEY_LEFTALT, ecodes.KEY_F4, *(key for keys in MEDIA_KEYS.values() for key in keys),
             ],
             ecodes.EV_REL: [ecodes.REL_WHEEL, ecodes.REL_WHEEL_HI_RES],
         }
@@ -84,6 +88,17 @@ class VirtualPointer:
         self.stop_zoom()
         workspace = f"e{step:+d}"
         _hyprctl("switch workspace", f'hl.dsp.focus({{ workspace = "{workspace}" }})', f"workspace {workspace}")
+
+    def adjust(self, setting: str, steps: int) -> None:
+        """Tap the `setting` ("volume" or "brightness") up key `steps` times, the down key if negative.
+
+        The desktop's own media key bindings do the change and show it.
+        """
+        self.stop_zoom()
+        key = MEDIA_KEYS[setting][steps < 0]
+        for _ in range(abs(steps)):
+            self._button(key, 1)
+            self._button(key, 0)
 
     def _shortcut(self, modifier: int, key: int) -> None:
         self.stop_zoom()

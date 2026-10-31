@@ -13,7 +13,7 @@ from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, touches_head,
+    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, touches_head,
 )
 from inputland.pointer import VirtualPointer
 from inputland.tracking import (
@@ -38,6 +38,7 @@ class Status:
     edge: bool = False
     scrolling: str | None = None
     zooming: str | None = None
+    adjusting: tuple[str, str] | None = None
     paused: bool = False
     head: bool = False
 
@@ -61,6 +62,7 @@ def run(
         pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
         victory = Debounce(settings.engage_frames, settings.release_frames)
         palms = Debounce(settings.engage_frames, settings.release_frames)
+        slider = Debounce(settings.engage_frames, settings.release_frames)
         thumb_up = Debounce(settings.engage_frames, settings.release_frames)
         thumb_down = Debounce(settings.paste_frames, settings.release_frames)
         love = Debounce(settings.close_frames, settings.release_frames)
@@ -75,7 +77,9 @@ def run(
             "raise the middle finger too to right click, thumbs up to copy, thumbs down to paste, "
             "hold the love-you sign (index and pinky up) to close the window, "
             "open both palms and move the pointing hand up or down to scroll, or spread / close them to zoom; "
-            "swipe one open palm left or right to switch workspace; make a fist to pause, open a palm to resume; "
+            "swipe one open palm left or right to switch workspace; "
+            "hold one palm open and pinch with the other hand, then move it up / down for volume or sideways for "
+            "brightness; make a fist to pause, open a palm to resume; "
             "hold an index finger on your forehead to steer the cursor with your head, again to stop"
         )
         driver: str | None = None
@@ -83,6 +87,11 @@ def run(
         last_status = None
         scroll_anchor = spread_anchor = 0.0
         palm_axis: str | None = None
+        slide_anchor = (0.0, 0.0)
+        slide_axis: str | None = None
+        slide_side = ""
+        slide_sent = 0
+        grip: str | None = None
         paused = False
         head = False
         head_anchor = (0.5, 0.5)
@@ -97,12 +106,23 @@ def run(
             now = time.monotonic()
             dt, last_frame = now - last_frame, now
             seen = tracker.detect(frame, int(now * 1000))
-            fists_closed = _started_by_either(fists, seen, "Closed_Fist", settings.min_gesture_score)
+            grab = None if pinch.state else find_grabber(seen, settings.min_gesture_score, settings.pinch_ratio)
+            if grab is not None:
+                grip = grab.side
+            elif any(h.side == grip and not is_pinching(h, settings.pinch_ratio) for h in seen):
+                grip = None
+            fists_closed = _started_by_either(
+                fists, [h for h in seen if h.side != grip], "Closed_Fist", settings.min_gesture_score
+            )
             palms_opened = _started_by_either(wake, seen, "Open_Palm", settings.min_gesture_score)
             if palms_opened if paused else fists_closed and n >= pause_from:
                 paused = not paused
                 log.info("paused; open a palm to resume" if paused else "resumed")
             hands = [] if paused else seen
+            if paused:
+                grab = None
+            was_sliding = slider.state
+            sliding = slider.update(grab is not None) or grab is not None
             if paused or not (head or hands):
                 face = None
             elif head or n % FACE_EVERY == 0:
@@ -132,7 +152,7 @@ def run(
                         log.debug("left button up")
                         pointer.release()
                         pinch = Debounce(settings.pinch_frames, settings.pinch_frames)
-                if not head:
+                if not (head or sliding):
                     u, v = settings.region.normalize(*hand.landmarks[INDEX_MCP])
                     edge = u in (0.0, 1.0) or v in (0.0, 1.0)
                     pointer.move_to(smooth_x(u, now), smooth_y(v, now))
@@ -144,7 +164,9 @@ def run(
 
             was_pinching = pinch.state
             mine = next((h for h in hands if h.side == driver), None)
-            pinching = driver is not None and (is_pinching(mine, settings.pinch_ratio) if mine else was_pinching)
+            pinching = driver not in (None, grip) and (
+                is_pinching(mine, settings.pinch_ratio) if mine else was_pinching
+            )
             if pinch.update(pinching) != was_pinching:
                 log.debug("left button %s", "up" if was_pinching else "down")
                 if was_pinching:
@@ -169,7 +191,7 @@ def run(
 
             mover = next(iter(owned), None)
             both_palms = (
-                mover is not None and len(hands) == 2
+                mover is not None and grab is None and len(hands) == 2
                 and all(is_gesture(h, "Open_Palm", settings.min_gesture_score) for h in hands)
             )
             was_palms = palms.state
@@ -191,6 +213,22 @@ def run(
             elif was_palms and not palms.state and palm_axis == "zoom":
                 pointer.stop_zoom()
 
+            if slider.state and grab is not None:
+                x, y = grab.landmarks[INDEX_MCP]
+                if not was_sliding:
+                    log.debug("slider grabbed by %s hand", grab.side.lower())
+                    slide_anchor, slide_axis, slide_sent, slide_side = (x, y), None, 0, grab.side
+                steps = {
+                    "volume": (slide_anchor[1] - y) / settings.slider_step,
+                    "brightness": (x - slide_anchor[0]) / settings.slider_step,
+                }
+                if slide_axis is None and max(map(abs, steps.values())) >= 1:
+                    slide_axis = max(steps, key=lambda axis: abs(steps[axis]))
+                    log.debug("slider %s", slide_axis)
+                if slide_axis and (change := int(steps[slide_axis] - slide_sent)):
+                    pointer.adjust(slide_axis, change)
+                    slide_sent += change
+
             if (
                 n >= swipe_from and mover is not None and len(hands) == 1
                 and is_gesture(mover, "Open_Palm", settings.min_gesture_score)
@@ -210,6 +248,7 @@ def run(
                 pressed=pinch.state, action=(owner, action) if owner and action else None, edge=edge,
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
+                adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
             )
             if status != last_status:
                 on_status(status)

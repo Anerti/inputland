@@ -41,7 +41,7 @@ IGNORED = "-"
 HEAD = "Head"
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
-    "Scrolling", "Zooming", "Paused", HEAD,
+    "Scrolling", "Zooming", "Slider", "Volume", "Brightness", "Paused", HEAD,
 )
 NAME_CHARS = max(len(t) for t in TEXTS)
 
@@ -159,6 +159,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "Paused", "absent"
     if status.action and side == status.action[0]:
         return status.action[1], "driving"
+    if status.adjusting:
+        return status.adjusting[1], "driving" if side == status.adjusting[0] else "seen"
     if status.scrolling:
         return "Scrolling", "driving" if side == status.scrolling else "seen"
     if status.zooming:

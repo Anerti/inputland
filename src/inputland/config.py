@@ -46,6 +46,7 @@ class Settings:
     zoom_speed: float = 10.0
     palms_cooldown_frames: int = 15
     swipe_distance: float = 0.25
+    slider_step: float = 0.013
     swipe_frames: int = 10
     swipe_cooldown_frames: int = 15
     head_touch_frames: int = 15
@@ -66,6 +67,8 @@ class Settings:
             raise ValueError(
                 f"need 0 <= zoom_dead_zone < 1 and zoom_speed > 0, got {self.zoom_dead_zone} and {self.zoom_speed}"
             )
+        if not 0 < self.slider_step < 0.5:
+            raise ValueError(f"need 0 < slider_step < 0.5, got {self.slider_step}")
         if not 0 < self.head_range <= 1:
             raise ValueError(f"need 0 < head_range <= 1, got {self.head_range}")
         if not (0 < self.swipe_distance < 1 and self.swipe_frames >= 2):
