@@ -69,7 +69,7 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 
 | Module | Role |
 |---|---|
-| `camera.py` | OpenCV V4L2 capture, mirrored frames |
+| `camera.py` | OpenCV V4L2 capture, mirrored RGB frames |
 | `tracking.py` | MediaPipe `GestureRecognizer` → `Hand` (side, gesture, 21 landmarks), `FaceLandmarker` → face landmarks (head mode); model download |
 | `gestures.py` | Pose rules (`is_gesture`, `is_pinching`, `touches_head`, `pick_pointer_hand`) and `Debounce` against single-frame flicker |
 | `filters.py` | One Euro filter (jitter vs. lag) |

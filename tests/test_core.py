@@ -83,6 +83,22 @@ def test_only_the_driver_keeps_control_while_pinching():
     assert pick_pointer_hand([hand], "Right", 0.5, 0.35) is None
 
 
+def test_camera_yields_mirrored_rgb_frames(monkeypatch):
+    import numpy as np
+
+    from inputland import camera
+
+    class Capture:
+        def __init__(self, *a): ...
+        def isOpened(self): return True
+        def set(self, *a): ...
+        def read(self): return True, np.array([[[1, 2, 3], [4, 5, 6]]], np.uint8)
+        def release(self): ...
+
+    monkeypatch.setattr(camera.cv2, "VideoCapture", Capture)
+    assert next(camera.Camera(0, 640, 480).frames()).tolist() == [[[6, 5, 4], [3, 2, 1]]]
+
+
 def test_tracker_falls_back_to_cpu_without_gpu(monkeypatch):
     from inputland import tracking
 
@@ -164,11 +180,11 @@ def uinput(monkeypatch):
 def test_pointer_scroll_adds_up_fractions_into_hi_res_and_notches(uinput):
     from inputland.pointer import ecodes
 
-    for notches in (0.004, 0.5, 0.6, -0.3):
+    for notches in (0.004, 0.5, 0.6, -0.3, -0.75):
         uinput.scroll(notches)
 
     hi = ecodes.REL_WHEEL_HI_RES
-    assert uinput.writes == [(hi, 60), (hi, 72), (ecodes.REL_WHEEL, 1), (hi, -35)]
+    assert uinput.writes == [(hi, 60), (hi, 72), (ecodes.REL_WHEEL, 1), (hi, -35), (hi, -90), (ecodes.REL_WHEEL, -1)]
 
 
 def test_pointer_close_lets_go_of_button_and_ctrl(uinput):
@@ -262,6 +278,23 @@ def test_model_download_with_bad_checksum_is_not_cached(monkeypatch, tmp_path):
 
     digest = tracking.hashlib.sha256(b"<html>login</html>").hexdigest()
     assert tracking.ensure_model(tracking.MODEL_URL, digest).read_bytes() == b"<html>login</html>"
+
+
+def test_cut_off_model_download_is_a_clean_error(monkeypatch, tmp_path):
+    import http.client
+    import io
+
+    from inputland import tracking
+
+    class CutOff(io.BytesIO):
+        def read(self, *a):
+            raise http.client.IncompleteRead(b"<html>", 1000)
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr(tracking.urllib.request, "urlopen", lambda url, timeout: CutOff())
+    with pytest.raises(RuntimeError, match="network"):
+        tracking.ensure_model(tracking.MODEL_URL, tracking.MODEL_SHA256)
+    assert not list((tmp_path / "inputland").iterdir())
 
 
 def test_cached_model_is_downloaded_again_when_its_checksum_changes(monkeypatch, tmp_path):

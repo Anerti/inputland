@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Camera:
-    """Webcam that yields mirrored BGR frames, so moving the hand right moves the cursor right."""
+    """Webcam that yields mirrored RGB frames, so moving the hand right moves the cursor right."""
 
     def __init__(self, index: int, width: int, height: int) -> None:
         self._cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
@@ -20,7 +20,7 @@ class Camera:
             ok, frame = self._cap.read()
             if not ok:
                 raise RuntimeError("camera stopped delivering frames")
-            yield cv2.flip(frame, 1)
+            yield cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
 
     def close(self) -> None:
         self._cap.release()

@@ -140,7 +140,7 @@ def test_thumbs_up_copies_and_held_thumbs_down_pastes_after_pointing(devices):
     app.run(Settings(engage_frames=1, release_frames=1, paste_frames=2), statuses.append)
 
     assert [e for e in devices.events if isinstance(e, str)] == ["copy", "paste"]
-    assert [(s.copied, s.pasted) for s in statuses if s.copied or s.pasted] == [("Right", None), (None, "Right")]
+    assert [s.action for s in statuses if s.action] == [("Right", "Copy"), ("Right", "Paste")]
 
 
 def test_held_love_closes_once_after_pointing(devices):
@@ -151,7 +151,7 @@ def test_held_love_closes_once_after_pointing(devices):
     app.run(Settings(engage_frames=1, release_frames=1, close_frames=3), statuses.append)
 
     assert [e for e in devices.events if isinstance(e, str)] == ["close"]
-    assert [s.closed for s in statuses if s.closed] == ["Right"]
+    assert [s.action for s in statuses if s.action] == [("Right", "Close")]
 
 
 def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
@@ -219,8 +219,9 @@ def test_status_reports_button_right_click_and_edge(devices):
     statuses = []
     app.run(Settings(engage_frames=1, release_frames=1, pinch_frames=1), statuses.append)
 
-    assert [(s.edge, s.pressed, s.right_click) for s in statuses] == [
-        (False, False, None), (True, False, None), (False, True, None), (False, False, None), (False, False, "Right"),
+    assert [(s.edge, s.pressed, s.action) for s in statuses] == [
+        (False, False, None), (True, False, None), (False, True, None), (False, False, None),
+        (False, False, ("Right", "Right click")),
     ]
 
 
@@ -299,10 +300,12 @@ def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):
     assert [e for e in devices.events if not isinstance(e, str)]
 
 
-def test_closing_a_hand_to_stop_scrolling_does_not_pause(devices):
+@pytest.mark.parametrize("unnamed", [0, 3])
+def test_closing_a_hand_to_stop_scrolling_does_not_pause(devices, unnamed):
     o = point("Right", 0.6, 0.45)
     lp, rp = hand("Left", 0.3, 0.45, gesture="Open_Palm"), hand("Right", 0.6, 0.45, gesture="Open_Palm")
-    devices.script = [[o], [lp, rp], [lp, rp], [lp, hand("Right", 0.6, 0.45, gesture="Closed_Fist")], [o]]
+    closing, fist = (hand("Right", 0.6, 0.45, gesture=g) for g in ("None", "Closed_Fist"))
+    devices.script = [[o], [lp, rp], [lp, rp], *[[lp, closing]] * unnamed, [lp, fist], [o]]
 
     statuses = []
     app.run(Settings(engage_frames=1, release_frames=1), statuses.append)

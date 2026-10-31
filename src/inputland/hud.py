@@ -64,7 +64,7 @@ CSS = """
 
 def theme_css() -> str:
     """Color definitions from the current Omarchy theme, falling back to neutral defaults."""
-    state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
     colors = dict(DEFAULT_COLORS)
     try:
         theme = tomllib.loads((state / "omarchy/current/theme/colors.toml").read_text())
@@ -79,7 +79,7 @@ def theme_css() -> str:
 
 
 class Hud:
-    def __init__(self, corner: str = "top-right") -> None:
+    def __init__(self, corner: str) -> None:
         self._corner = corner
         self._app = Gtk.Application(application_id="dev.inputland.Hud", flags=Gio.ApplicationFlags.NON_UNIQUE)
 
@@ -157,14 +157,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return STARTING, "absent"
     if status.paused:
         return "Paused", "absent"
-    if side == status.right_click:
-        return "Right click", "driving"
-    if side == status.copied:
-        return "Copy", "driving"
-    if side == status.pasted:
-        return "Paste", "driving"
-    if side == status.closed:
-        return "Close", "driving"
+    if status.action and side == status.action[0]:
+        return status.action[1], "driving"
     if status.scrolling:
         return "Scrolling", "driving" if side == status.scrolling else "seen"
     if status.zooming:

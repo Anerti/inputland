@@ -44,6 +44,7 @@ class Settings:
     scroll_speed: float = 80.0
     zoom_dead_zone: float = 0.1
     zoom_speed: float = 10.0
+    palms_cooldown_frames: int = 15
     swipe_distance: float = 0.25
     swipe_frames: int = 10
     swipe_cooldown_frames: int = 15

@@ -1,4 +1,5 @@
 import hashlib
+import http.client
 import logging
 import os
 import sys
@@ -10,7 +11,6 @@ from typing import Any, Self
 
 sys.modules.setdefault("sounddevice", None)
 
-import cv2
 import mediapipe as mp
 import numpy as np
 from mediapipe.tasks.python import BaseOptions, vision
@@ -56,14 +56,17 @@ class Hand:
 
 def ensure_model(url: str, sha256: str) -> Path:
     """Return the cached model at `url`, downloading it on first run or when `sha256` no longer matches it."""
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "inputland"
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "inputland"
     path = cache / url.rsplit("/", 1)[1]
     if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == sha256:
         return path
     log.info("downloading model to %s", path)
     cache.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=30) as response:
-        data = response.read()
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            data = response.read()
+    except http.client.HTTPException as e:
+        raise RuntimeError(f"model download from {url} failed ({e}); check the network and retry") from e
     if hashlib.sha256(data).hexdigest() != sha256:
         raise RuntimeError(f"model download from {url} failed its checksum; check the network and retry")
     tmp = path.with_suffix(".part")
@@ -86,10 +89,9 @@ class _VideoTask:
                 log.warning("GPU unavailable, tracking on the CPU (the cursor may stutter): %s", str(e)[:200])
         self._last_ts = -1
 
-    def _image(self, frame_bgr: np.ndarray, timestamp_ms: int) -> tuple[mp.Image, int]:
+    def _image(self, frame_rgb: np.ndarray, timestamp_ms: int) -> tuple[mp.Image, int]:
         self._last_ts = max(timestamp_ms, self._last_ts + 1)
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        return mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), self._last_ts
+        return mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb), self._last_ts
 
     def close(self) -> None:
         self._task.close()
@@ -102,15 +104,15 @@ class _VideoTask:
 
 
 class HandTracker(_VideoTask):
-    def __init__(self, model: Path, max_hands: int = 2) -> None:
+    def __init__(self, model: Path) -> None:
         super().__init__(model, lambda base: vision.GestureRecognizer.create_from_options(
             vision.GestureRecognizerOptions(
-                base_options=base, running_mode=vision.RunningMode.VIDEO, num_hands=max_hands,
+                base_options=base, running_mode=vision.RunningMode.VIDEO, num_hands=2,
             )
         ))
 
-    def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> list[Hand]:
-        result = self._task.recognize_for_video(*self._image(frame_bgr, timestamp_ms))
+    def detect(self, frame_rgb: np.ndarray, timestamp_ms: int) -> list[Hand]:
+        result = self._task.recognize_for_video(*self._image(frame_rgb, timestamp_ms))
         hands = []
         for handedness, gestures, landmarks in zip(result.handedness, result.gestures, result.hand_landmarks):
             top = gestures[0] if gestures else None
@@ -134,6 +136,6 @@ class FaceTracker(_VideoTask):
             vision.FaceLandmarkerOptions(base_options=base, running_mode=vision.RunningMode.VIDEO, num_faces=1)
         ))
 
-    def detect(self, frame_bgr: np.ndarray, timestamp_ms: int) -> Face | None:
-        result = self._task.detect_for_video(*self._image(frame_bgr, timestamp_ms))
+    def detect(self, frame_rgb: np.ndarray, timestamp_ms: int) -> Face | None:
+        result = self._task.detect_for_video(*self._image(frame_rgb, timestamp_ms))
         return tuple((lm.x, lm.y) for lm in result.face_landmarks[0]) if result.face_landmarks else None

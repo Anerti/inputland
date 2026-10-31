@@ -34,14 +34,11 @@ class Status:
     driver: str | None
     hands: tuple[tuple[str, str], ...]
     pressed: bool = False
-    right_click: str | None = None
+    action: tuple[str, str] | None = None
     edge: bool = False
     scrolling: str | None = None
-    copied: str | None = None
-    pasted: str | None = None
     zooming: str | None = None
     paused: bool = False
-    closed: str | None = None
     head: bool = False
 
 
@@ -67,6 +64,7 @@ def run(
         thumb_up = Debounce(settings.engage_frames, settings.release_frames)
         thumb_down = Debounce(settings.paste_frames, settings.release_frames)
         love = Debounce(settings.close_frames, settings.release_frames)
+        actions = ((victory, "Right click"), (thumb_up, "Copy"), (thumb_down, "Paste"), (love, "Close"))
         fists = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         head_touch = Debounce(settings.head_touch_frames, settings.release_frames)
@@ -90,7 +88,7 @@ def run(
         head_anchor = (0.5, 0.5)
         face: Face | None = None
         swipe: deque[tuple[int, float]] = deque()
-        swipe_from = 0
+        swipe_from = pause_from = 0
         last_frame = time.monotonic()
 
         for n, frame in enumerate(camera.frames()):
@@ -101,7 +99,7 @@ def run(
             seen = tracker.detect(frame, int(now * 1000))
             fists_closed = _started_by_either(fists, seen, "Closed_Fist", settings.min_gesture_score)
             palms_opened = _started_by_either(wake, seen, "Open_Palm", settings.min_gesture_score)
-            if palms_opened if paused else fists_closed and not palms.state:
+            if palms_opened if paused else fists_closed and n >= pause_from:
                 paused = not paused
                 log.info("paused; open a palm to resume" if paused else "resumed")
             hands = [] if paused else seen
@@ -176,6 +174,7 @@ def run(
             )
             was_palms = palms.state
             if palms.update(both_palms) and both_palms:
+                pause_from = n + settings.palms_cooldown_frames
                 y, spread = mover.landmarks[INDEX_MCP][1], _spread(hands)
                 if not was_palms:
                     log.debug("palms open")
@@ -205,13 +204,12 @@ def run(
                 swipe.clear()
                 swipe_from = n + settings.swipe_cooldown_frames
 
+            action = next((name for debounce, name in actions if debounce.state), None)
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
-                pressed=pinch.state, right_click=owner if victory.state else None, edge=edge,
+                pressed=pinch.state, action=(owner, action) if owner and action else None, edge=edge,
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
-                copied=owner if thumb_up.state else None, pasted=owner if thumb_down.state else None,
-                zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused,
-                closed=owner if love.state else None, head=head,
+                zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
             )
             if status != last_status:
                 on_status(status)
@@ -248,6 +246,7 @@ def _spread(hands: list[Hand]) -> float:
 
 def _show_preview(frame: np.ndarray, hands: list[Hand], active: bool, settings: Settings) -> bool:
     """Draw the calibration view. Returns False when the user asks to quit."""
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     h, w = frame.shape[:2]
     r = settings.region
     color = (0, 200, 0) if active else (0, 160, 255)

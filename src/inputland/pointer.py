@@ -17,7 +17,7 @@ class VirtualPointer:
     Needs write access to /dev/uinput.
     """
 
-    def __init__(self, name: str = "inputland pointer") -> None:
+    def __init__(self) -> None:
         axis = AbsInfo(value=0, min=0, max=ABS_MAX, fuzz=0, flat=0, resolution=0)
         capabilities = {
             ecodes.EV_ABS: [(ecodes.ABS_X, axis), (ecodes.ABS_Y, axis)],
@@ -28,7 +28,7 @@ class VirtualPointer:
             ecodes.EV_REL: [ecodes.REL_WHEEL, ecodes.REL_WHEEL_HI_RES],
         }
         try:
-            self._device = UInput(capabilities, name=name)
+            self._device = UInput(capabilities, name="inputland pointer")
         except (PermissionError, UInputError) as e:
             raise RuntimeError(f"cannot use /dev/uinput ({e}); see README 'Permissions'") from e
         self._pressed_at: float | None = None
@@ -98,6 +98,8 @@ class VirtualPointer:
             return
         self._wheel -= hi
         self._device.write(ecodes.EV_REL, ecodes.REL_WHEEL_HI_RES, hi)
+        if hi * self._notch_units < 0:
+            self._notch_units = 0
         self._notch_units += hi
         if clicks := int(self._notch_units / 120):
             self._device.write(ecodes.EV_REL, ecodes.REL_WHEEL, clicks)

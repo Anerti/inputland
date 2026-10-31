@@ -4,7 +4,7 @@ from inputland.app import Status
 
 try:
     from inputland import hud
-except (ImportError, RuntimeError):
+except (ImportError, RuntimeError, ValueError):
     pytest.skip("needs GTK 4 and gtk4-layer-shell", allow_module_level=True)
 
 
@@ -16,10 +16,10 @@ except (ImportError, RuntimeError):
         (Status("Right", (("Left", "Thumb_Up"), ("Right", "Pointing_Up"))), "-", "Moving"),
         (Status("Right", (("Left", "Pointing_Up"), ("Right", "None")), pressed=True), "Pointing", "Pinch"),
         (Status("Right", (("Right", "Pointing_Up"),), edge=True), "Not seen", "At edge"),
-        (Status(None, (("Right", "Victory"),), right_click="Right"), "Not seen", "Right click"),
-        (Status(None, (("Right", "Thumb_Up"),), copied="Right"), "Not seen", "Copy"),
-        (Status(None, (("Right", "Thumb_Down"),), pasted="Right"), "Not seen", "Paste"),
-        (Status(None, (("Right", "ILoveYou"),), closed="Right"), "Not seen", "Close"),
+        (Status(None, (("Right", "Victory"),), action=("Right", "Right click")), "Not seen", "Right click"),
+        (Status(None, (("Right", "Thumb_Up"),), action=("Right", "Copy")), "Not seen", "Copy"),
+        (Status(None, (("Right", "Thumb_Down"),), action=("Right", "Paste")), "Not seen", "Paste"),
+        (Status(None, (("Right", "ILoveYou"),), action=("Right", "Close")), "Not seen", "Close"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), "Scrolling", "Scrolling"),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), zooming="Right"), "Zooming", "Zooming"),
         (Status(None, (), paused=True), "Paused", "Paused"),
