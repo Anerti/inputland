@@ -1,17 +1,55 @@
 # inputland
 
-Control the mouse with hand gestures from a webcam. Works on Wayland (Hyprland), X11 and the TTY.
+Control the mouse with hand gestures from a webcam: point to move, pinch to click, open your palms to scroll. Works on Wayland (Hyprland), X11 and the TTY.
 
-**Current scope:** point with either index finger (☝️) to move the cursor. Any other pose releases it. If both hands point, the hand already moving the cursor keeps it.
-While pointing, touch your thumb to your index fingertip (🤏) to left click; open the pinch before the next one. Pinch twice quickly to double click. Hold the pinch and move to drag. Raise your middle finger too (✌️) to right click.
-Hold 🤟 or 🤘 (index and pinky out, thumb either way) for about a second, with the hand that was pointing, to close the focused window: `hyprctl dispatch` on Hyprland (`hl.dsp.window.close()`, or `killactive` before its Lua config), Alt+F4 elsewhere, nothing on the TTY.
-Thumbs up (👍) copies and thumbs down (👎, held a moment longer) pastes, with the hand that was pointing. They send Ctrl+Insert and Shift+Insert, which most apps take as copy and paste and which, unlike Ctrl+C, do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
-To scroll, open both palms (🖐️🖐️) and move the hand that was pointing up or down from where it started: the further you move it, the faster it scrolls. Spread the open palms apart to zoom in, bring them together to zoom out (Ctrl+wheel, so most apps zoom around the cursor); the further, the faster. Whichever starts first, scroll or zoom, keeps the gesture until you close either hand to stop.
-Swipe one open palm (🖐️) quickly left or right, with the hand that was pointing, to go to the next or previous workspace, like Hyprland's touchpad swipe (Hyprland only).
-To change the volume or the screen brightness, hold one palm open (🖐️) and pinch (🤏) with the other hand, as if grabbing a slider, then move the pinching hand: up / down for volume, right / left for brightness, about one step per centimeter. Whichever direction steps first keeps the gesture until you let go of the pinch. It taps the volume and brightness keys, so your desktop's own bindings do the change and show it (Omarchy shows its OSD); a pinch that was already dragging stays a drag.
-Make a fist (✊) with either hand to pause: the hands are ignored, so you can gesture freely, until you open a palm (🖐️) to resume.
-Hold an index fingertip on your forehead for half a second to steer the cursor with your head instead (your nose tip; the cursor starts at the screen center), and again to go back to your hand. Pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
-A HUD in the top-right corner shows what each hand is doing (`Moving`, `Pinch`, `Right click`, `Copy`, `Paste`, `Close`, `Scrolling`, `Zooming`, `Slider` / `Volume` / `Brightness`, `At edge` when the hand is outside the mapped region, `Paused`, `Head` in head mode), and `Close...`, `Paste...`, `Head...` or `Head off...` while a hold builds up, so you can let go in time. It highlights the hand moving the cursor and, when none does, underlines the one whose gestures count (the last to point), in your Omarchy theme colors. Poses that do nothing show `-`.
+![Platform](https://img.shields.io/badge/platform-Linux-e4d1a7?style=flat-square) ![Wayland](https://img.shields.io/badge/Wayland-Hyprland-c71c0f?style=flat-square) ![X11](https://img.shields.io/badge/X11-supported-e59563?style=flat-square) ![TTY](https://img.shields.io/badge/TTY-supported-fae6a7?style=flat-square)
+
+![Python](https://img.shields.io/badge/Python-3.13-c71c0f?style=flat-square) ![MediaPipe](https://img.shields.io/badge/MediaPipe-hands%20%26%20face-e59563?style=flat-square)
+
+![inputland](docs/banner.jpg)
+
+Point with either index finger and the cursor follows the base of that finger, so it stays put while you pinch. A small HUD in the corner shows what each hand is doing.
+
+## Gestures
+
+| Preview | Gesture |
+| ------- | ------- |
+| <img src="docs/gestures/point.jpg" width="180" alt="Point"> | **Point** with either index finger: move the cursor. Any other pose releases it; if both hands point, the hand already moving the cursor keeps it |
+| <img src="docs/gestures/pinch.jpg" width="180" alt="Pinch"> | **Pinch** thumb to index tip while pointing: left click. Pinch twice quickly to double click; hold the pinch and move to drag. Open the pinch before the next one |
+| <img src="docs/gestures/victory.jpg" width="180" alt="Victory"> | **Victory**, index and middle finger up: right click |
+| <img src="docs/gestures/love.jpg" width="180" alt="Index and pinky out"> | **Index and pinky out**, thumb either way, held about a second: close the focused window (`hyprctl dispatch` on Hyprland, Alt+F4 elsewhere, nothing on the TTY) |
+| <img src="docs/gestures/thumbs-up.jpg" width="180" alt="Thumbs up"> | **Thumbs up**: copy (Ctrl+Insert) |
+| <img src="docs/gestures/thumbs-down.jpg" width="180" alt="Thumbs down"> | **Thumbs down**, held a moment: paste (Shift+Insert) |
+| <img src="docs/gestures/two-palms.jpg" width="180" alt="Two open palms"> | **Two open palms**: move the pointing hand up / down to scroll, joystick style; spread the palms apart / together to zoom in / out (Ctrl+wheel, so most apps zoom around the cursor). The further, the faster |
+| <img src="docs/gestures/palm.jpg" width="180" alt="Open palm"> | **One open palm** swiped quickly left / right: next / previous workspace, like Hyprland's touchpad swipe (Hyprland only). While paused: resume |
+| <img src="docs/gestures/palm-pinch.jpg" width="180" alt="Open palm and pinch"> | **One palm open, the other hand pinching**, like grabbing a slider: move the pinch up / down for volume, right / left for brightness, about one step per centimeter |
+| <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm |
+| <img src="docs/gestures/forehead.jpg" width="180" alt="Index on forehead"> | **Index fingertip on your forehead** for half a second: steer the cursor with your head (nose tip, starting at the screen center); again to go back to your hand |
+
+Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, so a stray pose from the other hand does nothing.
+Scroll and zoom: whichever starts first keeps the gesture until you close either hand. Volume and brightness: whichever direction steps first keeps it until you let go of the pinch. They tap the media keys, so your desktop's own bindings make the change and show it (Omarchy shows its OSD). A pinch that was already dragging stays a drag.
+Copy and paste use Ctrl+Insert and Shift+Insert because, unlike Ctrl+C, they do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
+In head mode, pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
+
+## HUD
+
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors. Clicks pass through it.
+
+| Label | Meaning |
+| ----- | ------- |
+| `Starting` · `Point to start` · `Not seen` | Loading, no hand in view, this hand out of view |
+| `Moving` | This hand moves the cursor (highlighted) |
+| `Pointing` | This hand points, but the other one has the cursor |
+| `Pinch` | The left button is held (click or drag) |
+| `Right click` · `Copy` · `Paste` · `Close` | The action just sent |
+| `Scrolling` · `Zooming` | Two open palms |
+| `Slider` · `Volume` · `Brightness` | Palm plus pinch |
+| `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time |
+| `At edge` | The hand is outside the mapped region |
+| `Paused` · `Head` | Paused, or in head mode |
+| `-` | A pose that does nothing |
+
+When no hand moves the cursor, the one whose gestures count (the last to point) is underlined.
 
 ## Setup
 
@@ -90,3 +128,7 @@ New gestures go in `gestures.py`; new outputs (clicks, keys, `hyprctl`) go next 
 ```sh
 uv run pytest
 ```
+
+## License
+
+[MIT](LICENSE)
