@@ -34,7 +34,7 @@ class VirtualPointer:
         try:
             self._device = UInput(capabilities, name="inputland pointer")
         except (PermissionError, UInputError) as e:
-            raise RuntimeError(f"cannot use /dev/uinput ({e}); see README 'Permissions'") from e
+            raise RuntimeError(f"cannot use /dev/uinput ({e}); run ./install.sh setup, then log out and back in") from e
         self._pressed_at: float | None = None
         self._wheel = 0.0
         self._notch_units = 0

@@ -51,36 +51,30 @@ A HUD in the top-right corner shows what each hand is doing, in your Omarchy the
 
 When no hand moves the cursor, the one whose gestures count (the last to point) is underlined.
 
-## Setup
+## Install
 
 ```sh
-sudo pacman -S gtk4-layer-shell   # HUD overlay (Wayland)
-uv sync                    # Python 3.13 + MediaPipe, OpenCV, evdev, PyGObject
-uv run inputland --preview # first run downloads the gesture and face models (~12 MB) to ~/.cache/inputland
+git clone https://github.com/Anerti/inputland.git ~/Projects/inputland && cd ~/Projects/inputland
+./install.sh            # interactive menu; or ./install.sh install --yes
 ```
 
-### Permissions
+| Command | What it does |
+|---|---|
+| `./install.sh install` | Installs `gtk4-layer-shell` (pacman) and `uv sync --locked`, adds an `inputland` command in `~/.local/bin`, then runs `setup` |
+| `./install.sh setup` | Grants `/dev/uinput` access through a `uinput` group and udev rule (not the `input` group, which can read every keyboard), downloads and verifies the models (~12 MB) to `~/.cache/inputland`, checks for a camera |
+| `./install.sh uninstall` | Removes the `inputland` command, `.venv` and the cached models; asks before removing the udev rule and the `uinput` group membership. The source folder is kept |
 
-The cursor is driven by a kernel virtual device, so your user needs write access to `/dev/uinput`.
-Use a group of its own, not `input`: that one can also read every keyboard, so any program you run could log your keys.
-
-```sh
-sudo groupadd -f uinput
-echo 'KERNEL=="uinput", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"' \
-  | sudo tee /etc/udev/rules.d/99-uinput.rules
-sudo usermod -aG uinput "$USER"   # then log out and back in
-sudo modprobe uinput
-```
+It needs [uv](https://docs.astral.sh/uv/) and asks for `sudo` only for the package and the permissions. With [gum](https://github.com/charmbracelet/gum) installed (it ships with Omarchy) it shows menus and progress spinners; without it, plain prompts. After the first setup, log out and back in so the group membership applies.
 
 ## Usage
 
 ```sh
-uv run inputland            # run with the HUD (Ctrl+C to quit)
-uv run inputland --preview  # camera view with the HUD's text and pinch ratios; green box = active (q/Esc quits)
-uv run inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
+inputland            # run with the HUD (Ctrl+C to quit)
+inputland --preview  # camera view with the HUD's text and pinch ratios; green box = active (q/Esc quits)
+inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
 ```
 
-Started without a terminal (e.g. from a keybinding), it shows a fatal error as a desktop notification.
+Started without a terminal (e.g. from a keybinding), it shows a fatal error as a desktop notification. To start it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
 ### Calibration
 
@@ -101,7 +95,7 @@ Started without a terminal (e.g. from a keybinding), it shows a fatal error as a
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
-Flags are not saved; keep your values in a shell alias, e.g. `alias inputland='uv run --project ~/Projects/inputland inputland --region 0.3 0.25 0.7 0.65'`.
+Flags are not saved; keep your values in a shell alias, e.g. `alias inputland='inputland --region 0.3 0.25 0.7 0.65'`, or in your keybinding.
 
 With several monitors the region maps onto the whole screen layout, so the same hand movement covers all of them and each monitor gets less precision.
 

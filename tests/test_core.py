@@ -170,7 +170,7 @@ def test_pointer_without_uinput_access_points_to_the_readme(monkeypatch):
         raise pointer.UInputError('"/dev/uinput" cannot be opened for writing')
 
     monkeypatch.setattr(pointer, "UInput", denied)
-    with pytest.raises(RuntimeError, match="Permissions"):
+    with pytest.raises(RuntimeError, match="install.sh setup"):
         pointer.VirtualPointer()
 
 
