@@ -127,7 +127,8 @@ def theme_colors(widget: Gtk.Widget) -> styles.Colors:
     context = widget.get_style_context()
     found = []
     for name in ("bg", "fg", "active", "on_active"):
-        # shortcut: Gtk.StyleContext.lookup_color is deprecated since GTK 4.10, still in GTK 4; replace when moving to GTK 5
+        # shortcut: Gtk.StyleContext.lookup_color is deprecated since GTK 4.10, still in GTK 4;
+        # replace when moving to GTK 5
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             _, rgba = context.lookup_color(name)
@@ -235,6 +236,8 @@ class Hud:
         self._theme = install_theme(self._view.redraw)
 
         window = Gtk.ApplicationWindow(application=app)
+        if self._style != "default":
+            window.remove_css_class("background")  # transparent around the drawn shapes
         LayerShell.init_for_window(window)
         LayerShell.set_namespace(window, "inputland")
         LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
