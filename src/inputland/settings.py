@@ -6,6 +6,7 @@ Gestures tab that shows what each gesture does.
 
 import argparse
 import dataclasses
+import functools
 import logging
 import math
 import re
@@ -26,7 +27,7 @@ from inputland.config import Settings
 
 log = logging.getLogger(__name__)
 
-TABS = {"Look": ("HUD",), "Feel": ("Cursor", "Scroll and zoom", "Gestures"), "Camera": ("Camera",)}
+TABS = {"Look": ("HUD",), "Feel": ("Cursor", "Scroll and zoom", "Swipe, slider and head"), "Camera": ("Camera",)}
 
 GROUPS = {  # dest -> heading, in the window's order
     "hud": "HUD",
@@ -39,9 +40,9 @@ GROUPS = {  # dest -> heading, in the window's order
     "scroll_dead_zone": "Scroll and zoom",
     "zoom_speed": "Scroll and zoom",
     "zoom_dead_zone": "Scroll and zoom",
-    "swipe_distance": "Gestures",
-    "slider_step": "Gestures",
-    "head_range": "Gestures",
+    "swipe_distance": "Swipe, slider and head",
+    "slider_step": "Swipe, slider and head",
+    "head_range": "Swipe, slider and head",
     "camera": "Camera",
     "region": "Camera",
     "preview": "Camera",
@@ -433,30 +434,45 @@ def logo() -> Gtk.Widget:
     return area
 
 
-def gestures_page() -> Gtk.Widget:
-    """What each gesture does, with its picture, in the cards the settings use."""
+def cards_page(sections: dict[str, list[Gtk.Widget]], intro: str = "") -> Gtk.Widget:
+    """A tab: under each heading, its rows in a card, between separators; `intro` above them all."""
     page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=18, margin_end=18, margin_bottom=18)
-    page.append(Gtk.Label(label="Right click and the shortcuts count only from the hand that last pointed, within "
-                                "about 3 seconds.", xalign=0, wrap=True, margin_top=16, css_classes=["dim"]))
-    for heading, rows in GESTURES.items():
+    if intro:
+        page.append(Gtk.Label(label=intro, xalign=0, wrap=True, margin_top=16, css_classes=["dim"]))
+    for heading, rows in sections.items():
         page.append(Gtk.Label(label=heading.upper(), xalign=0, css_classes=["section"]))
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card"])
-        for picture, gesture, action in rows:
+        for row in rows:
             if card.get_first_child():
                 card.append(Gtk.Separator())
-            image = Gtk.Image.new_from_file(str(LOGO.parent / "gestures" / f"{picture}.jpg"))
-            image.set_pixel_size(72)
-            image.set_overflow(Gtk.Overflow.HIDDEN)  # clips it to the rounded corners
-            image.add_css_class("gesture")
+            card.append(row)
+        page.append(card)
+    return Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
+
+
+@functools.cache  # once for all windows: each one the triangle opens is kept until inputland quits
+def picture(name: str) -> Gdk.Texture:
+    """A gesture's picture in docs/gestures."""
+    return Gdk.Texture.new_from_filename(str(LOGO.parent / "gestures" / f"{name}.jpg"))
+
+
+def gestures_page() -> Gtk.Widget:
+    """What each gesture does, with its picture, in the cards the settings use."""
+    sections: dict[str, list[Gtk.Widget]] = {heading: [] for heading in GESTURES}
+    for heading, rows in GESTURES.items():
+        for name, gesture, action in rows:
+            # clipped to its rounded corners; centered, since in a taller row the clip would round the row's
+            image = Gtk.Image(paintable=picture(name), pixel_size=72, valign=Gtk.Align.CENTER,
+                              overflow=Gtk.Overflow.HIDDEN, css_classes=["gesture"])
             text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True, valign=Gtk.Align.CENTER)
             text.append(Gtk.Label(label=gesture, xalign=0, wrap=True))
             text.append(Gtk.Label(label=action, xalign=0, wrap=True, css_classes=["dim"]))
             row = Gtk.Box(spacing=14, css_classes=["item"])
             row.append(image)
             row.append(text)
-            card.append(row)
-        page.append(card)
-    return Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            sections[heading].append(row)
+    return cards_page(sections, "Right click, copy, paste, close, scroll, zoom and swipe count only from the hand that "
+                                "last pointed, within about 3 seconds.")
 
 
 class _Window:
@@ -480,17 +496,9 @@ class _Window:
         self._stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
         actions = dict((action.dest, action) for _, action in form_fields(parser))
         for tab, headings in TABS.items():
-            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=18, margin_end=18, margin_bottom=18)
-            for heading in headings:
-                page.append(Gtk.Label(label=heading.upper(), xalign=0, css_classes=["section"]))
-                card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card"])
-                for dest in (d for d, h in GROUPS.items() if h == heading):
-                    if card.get_first_child():
-                        card.append(Gtk.Separator())
-                    card.append(self._row(dest, actions[dest]))
-                page.append(card)
-            scroll = Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
-            self._stack.add_titled(scroll, tab, tab)
+            sections = {heading: [self._row(dest, actions[dest]) for dest, h in GROUPS.items() if h == heading]
+                        for heading in headings}
+            self._stack.add_titled(cards_page(sections), tab, tab)
         self._stack.add_titled(gestures_page(), "Gestures", "Gestures")
 
         header = Gtk.Box(margin_top=16, margin_start=18, margin_end=18, margin_bottom=12)

@@ -75,3 +75,4 @@ def test_dragging_the_tracking_area_keeps_it_inside_the_frame(grab, dx, dy, box)
 def test_the_gestures_tab_shows_every_gesture_picture():
     shown = [picture for rows in settings.GESTURES.values() for picture, _, _ in rows]
     assert sorted(shown) == sorted(p.stem for p in (settings.LOGO.parent / "gestures").glob("*.jpg"))
+    assert all(settings.picture(name).get_width() for name in shown)  # loading raises on a broken file
