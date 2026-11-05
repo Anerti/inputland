@@ -17,7 +17,7 @@ import gi
 
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from inputland import cli, hud, styles
 from inputland.app import Status
@@ -91,6 +91,8 @@ PREVIEW_STATUS = Status("Left", (("Left", "Pointing_Up"), ("Right", "None")), ow
 
 MIN_REGION = 0.1  # smallest tracking-area side, fraction of the frame
 
+LOGO = Path(__file__).resolve().parents[2] / "docs/logo.svg"  # the repo's, like the launcher entry's icon
+
 CSS = """
 window.inputland-settings { background: @bg; color: @fg; }
 .inputland-settings label.title { font-weight: 800; font-size: 18px; }
@@ -101,10 +103,11 @@ window.inputland-settings { background: @bg; color: @fg; }
   border-radius: 12px; padding: 2px 14px; }
 .inputland-settings .card > separator { background: mix(@bg, @fg, 0.08); min-height: 1px; }
 .inputland-settings .item { padding: 10px 0; }
-.inputland-settings stackswitcher { background: mix(@bg, @fg, 0.045); border-radius: 10px; padding: 3px; }
-.inputland-settings stackswitcher button { background: none; border: none; box-shadow: none; border-radius: 8px;
-  color: alpha(@fg, 0.6); font-weight: 600; padding: 5px 0; }
-.inputland-settings stackswitcher button:checked { background: mix(@bg, @fg, 0.14); color: @fg; }
+.inputland-settings stackswitcher { box-shadow: inset 0 -1px mix(@bg, @fg, 0.1); }
+.inputland-settings stackswitcher button { background: none; border: none; box-shadow: none; border-radius: 0;
+  color: alpha(@fg, 0.6); font-weight: 600; padding: 8px 0; }
+.inputland-settings stackswitcher button:hover { background: none; color: @fg; box-shadow: inset 0 -2px @accent; }
+.inputland-settings stackswitcher button:checked { background: none; color: @fg; box-shadow: inset 0 -3px @accent; }
 .inputland-settings button { background: mix(@bg, @fg, 0.08); color: @fg; border: none; box-shadow: none;
   border-radius: 8px; }
 .inputland-settings button:hover { background: mix(@bg, @fg, 0.14); }
@@ -122,9 +125,13 @@ window.inputland-settings { background: @bg; color: @fg; }
 .inputland-settings scale highlight { background: @accent; border: none; border-radius: 3px; margin: 0;
   min-height: 6px; }
 .inputland-settings scale slider { background: @fg; border: none; box-shadow: 0 1px 3px alpha(black, 0.4); }
+.inputland-settings flowboxchild { padding: 0; background: none; }
 .inputland-settings button.style-card { background: @bg; border: 1px solid mix(@bg, @fg, 0.12);
-  border-radius: 10px; padding: 8px; }
-.inputland-settings button.style-card:checked { border: 2px solid @accent; padding: 7px; }
+  border-radius: 10px; padding: 14px 12px 10px; }
+.inputland-settings button.style-card:hover { background: mix(@bg, @fg, 0.04); }
+.inputland-settings button.style-card:checked { border: 2px solid @accent; padding: 13px 11px 9px; }
+.inputland-settings .style-name { color: alpha(@fg, 0.6); }  /* not every label: Default's preview has its own */
+.inputland-settings button.style-card:checked .style-name { color: @fg; font-weight: bold; }
 .inputland-settings .screen { border: 2px solid alpha(@fg, 0.4); border-radius: 6px; padding: 4px; }
 .inputland-settings button.corner { min-width: 18px; min-height: 10px; padding: 0; border-radius: 2px;
   background: alpha(@fg, 0.2); }
@@ -240,17 +247,19 @@ def corner_input(action: argparse.Action, value: str) -> Input:
 
 
 def style_input(action: argparse.Action, value: str, views: list[hud.HudView]) -> Input:
-    """One card per style, each showing the HUD drawn in it; `views` gets the previews, to redraw on a theme change."""
-    cards = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    """One card per style, each showing the HUD drawn in it, two per line when the window is wide enough; `views` gets
+    the previews, to redraw on a theme change."""
+    cards = Gtk.FlowBox(homogeneous=True, max_children_per_line=2, column_spacing=10, row_spacing=10,
+                        selection_mode=Gtk.SelectionMode.NONE)
     buttons: dict[str, Gtk.ToggleButton] = {}
     for style in action.choices:
         view = hud.HudView(style)
         view.render(PREVIEW_STATUS)
-        view.widget.set_halign(Gtk.Align.START)
+        view.widget.set_halign(Gtk.Align.CENTER)
         views.append(view)
-        content = Gtk.Box(spacing=14)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, valign=Gtk.Align.CENTER)
         content.append(view.widget)
-        content.append(Gtk.Label(label=styles.NAMES[style], xalign=0, hexpand=True))
+        content.append(Gtk.Label(label=styles.NAMES[style], css_classes=["style-name"]))
         button = Gtk.ToggleButton(child=content, css_classes=["style-card"])
         if buttons:
             button.set_group(next(iter(buttons.values())))
@@ -261,20 +270,29 @@ def style_input(action: argparse.Action, value: str, views: list[hud.HudView]) -
 
 
 def region_input(value: object) -> Input:
-    """A box over a frame standing for the camera view, dragged as a whole or by a corner; the four exact values
-    below it, for the keyboard. `None` means the default region, as in the parser."""
+    """A box over a frame standing for the camera view, dragged as a whole or by a corner; a slider per side below
+    it, also for the keyboard. `None` means the default region, as in the parser."""
     default = dataclasses.astuple(Settings().region)
-    spins = [Gtk.SpinButton(adjustment=Gtk.Adjustment(lower=0, upper=1, step_increment=0.01, page_increment=0.1),
-                            digits=2, width_chars=4) for _ in range(4)]
+    sliders = [Gtk.Scale(adjustment=Gtk.Adjustment(lower=0, upper=1, step_increment=0.01, page_increment=0.1),
+                         draw_value=False, hexpand=True) for _ in range(4)]
     area = Gtk.DrawingArea(content_height=200, hexpand=True)
     grabbed: list[object] = []  # [grab, box at the start of the drag]
+    setting: list[bool] = []  # non-empty while set_ moves the sliders: the box it sets is whole, no side to keep apart
 
     def box() -> Box4:
-        return tuple(round(s.get_value(), 2) for s in spins)
+        return tuple(round(s.get_value(), 2) for s in sliders)
 
     def set_(v: object) -> None:
-        for spin, x in zip(spins, v or default):
-            spin.set_value(x)
+        setting.append(True)
+        for slider, x in zip(sliders, v or default):
+            slider.set_value(x)
+        setting.clear()
+
+    def keep_apart(i: int) -> None:
+        """A side's slider stops `MIN_REGION` before the opposite side (left/right, top/bottom)."""
+        value, other = sliders[i].get_value(), sliders[(i + 2) % 4].get_value()
+        if not setting and (other - value if i < 2 else value - other) < MIN_REGION - 1e-9:
+            sliders[i].set_value(round(other - MIN_REGION if i < 2 else other + MIN_REGION, 2))
 
     def frame(w: int, h: int) -> tuple[float, float, float, float]:
         fh = min(h, w * 3 / 4)  # a 4:3 camera frame, centered
@@ -338,14 +356,24 @@ def region_input(value: object) -> Input:
     motion = Gtk.EventControllerMotion()
     motion.connect("motion", hover)
     area.add_controller(motion)
-    for spin in spins:
-        spin.connect("value-changed", lambda _: area.queue_draw())
-    set_(value)
+    exact = Gtk.Grid(column_spacing=12, row_spacing=2)
+    for i, (name, slider) in enumerate(zip(("Left", "Top", "Right", "Bottom"), sliders)):
+        shown = Gtk.Label(width_chars=4, xalign=1, css_classes=["dim"])
 
-    exact = Gtk.Grid(column_spacing=8, row_spacing=6, halign=Gtk.Align.CENTER)
-    for i, (name, spin) in enumerate(zip(("Left", "Top", "Right", "Bottom"), spins)):
-        exact.attach(Gtk.Label(label=name, xalign=1, css_classes=["dim"]), 2 * (i % 2), i // 2, 1, 1)
-        exact.attach(spin, 2 * (i % 2) + 1, i // 2, 1, 1)
+        def changed(s: Gtk.Scale, i: int = i, shown: Gtk.Label = shown) -> None:
+            keep_apart(i)
+            shown.set_label(f"{s.get_value():.2f}")
+            area.queue_draw()
+
+        slider.set_round_digits(2)
+        slider.connect("value-changed", changed)
+        row = (i % 2) * 2 + i // 2  # left, right, top, bottom
+        exact.attach(Gtk.Label(label=name, xalign=0, width_chars=6, css_classes=["dim"]), 0, row, 1, 1)
+        exact.attach(slider, 1, row, 1, 1)
+        exact.attach(shown, 2, row, 1, 1)
+    set_(value)
+    for slider in sliders:
+        slider.emit("value-changed")  # the labels, also for a side already at 0
     widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     widget.append(area)
     widget.append(exact)
@@ -355,6 +383,27 @@ def region_input(value: object) -> Input:
         return None if got == list(default) else got
 
     return widget, get, set_
+
+
+def logo() -> Gtk.Widget:
+    """The app logo, drawn from its SVG so it is sharp at any scale; the name in text without librsvg or the file."""
+    try:
+        gi.require_version("Rsvg", "2.0")
+        from gi.repository import Rsvg
+
+        handle = Rsvg.Handle.new_from_file(str(LOGO))
+    except (ValueError, ImportError, GLib.Error):
+        return Gtk.Label(label="inputland", xalign=0, hexpand=True, css_classes=["title"])
+    area = Gtk.DrawingArea(content_width=138, content_height=50, hexpand=True, halign=Gtk.Align.START)
+
+    def draw(_: Gtk.DrawingArea, ctx: cairo.Context, w: int, h: int) -> None:
+        viewport = Rsvg.Rectangle()
+        viewport.width, viewport.height = w, h
+        handle.render_document(ctx, viewport)
+
+    area.set_draw_func(draw)
+    area.update_property([Gtk.AccessibleProperty.LABEL], ["inputland"])
+    return area
 
 
 class _Window:
@@ -391,7 +440,7 @@ class _Window:
             self._stack.add_titled(scroll, tab, tab)
 
         header = Gtk.Box(margin_top=16, margin_start=18, margin_end=18, margin_bottom=12)
-        header.append(Gtk.Label(label="inputland", xalign=0, hexpand=True, css_classes=["title"]))
+        header.append(logo())
         header.append(Gtk.Label(label="settings", css_classes=["dim"]))
         tabs = Gtk.StackSwitcher(stack=self._stack, margin_start=18, margin_end=18)
 
