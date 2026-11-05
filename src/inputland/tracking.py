@@ -86,7 +86,10 @@ class _VideoTask:
             except RuntimeError as e:
                 if delegate == BaseOptions.Delegate.CPU:
                     raise
-                log.warning("GPU unavailable, tracking on the CPU (the cursor may stutter): %s", str(e)[:200])
+                log.warning(
+                    "GPU unavailable, tracking on the CPU (the cursor may stutter): %s", str(e)[:200],
+                    extra={"notify": isinstance(self, HandTracker)},  # the face tracker falls back too: notify once
+                )
         self._last_ts = -1
 
     def _image(self, frame_rgb: np.ndarray, timestamp_ms: int) -> tuple[mp.Image, int]:

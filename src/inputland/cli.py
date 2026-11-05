@@ -1,20 +1,32 @@
 import argparse
 import contextlib
 import html
+import json
 import logging
 import os
 import subprocess
 import sys
+import threading
+import tomllib
+from pathlib import Path
 
 from inputland.app import run
 from inputland.config import Region, Settings
+from inputland.styles import STYLES
+
+RESUME = "INPUTLAND_RESUME"  # set across the exec when a triangle without the HUD opened the settings window
 
 
-def main() -> None:
+def build_parser(config: Path) -> argparse.ArgumentParser:
     defaults = Settings()
-    parser = argparse.ArgumentParser(description="Control the mouse with hand gestures.")
+    parser = argparse.ArgumentParser(
+        description=f"Control the mouse with hand gestures. Flags can also be set in {config}.",
+    )
     parser.add_argument("--camera", type=int, default=defaults.camera, help="camera index (/dev/videoN)")
-    parser.add_argument("--preview", action="store_true", help="show the camera view for calibration, replaces the HUD (q/Esc quits)")
+    parser.add_argument(
+        "--preview", action=argparse.BooleanOptionalAction, default=False,
+        help="show the camera view for calibration, replaces the HUD (q/Esc quits)",
+    )
     parser.add_argument(
         "--region", type=float, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
         help="part of the camera frame (0..1) mapped to the screen",
@@ -53,49 +65,179 @@ def main() -> None:
         "--head-range", type=float, default=defaults.head_range,
         help="nose travel (fraction of the frame) that crosses the screen in head mode (index finger on the forehead)",
     )
-    parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
+    parser.add_argument(
+        "--hud", action=argparse.BooleanOptionalAction, default=True,
+        help="show the on-screen overlay (--no-hud hides it, --hud undoes a no-hud in the config file)",
+    )
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
         help="screen corner of the overlay",
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    parser.add_argument(
+        "--hud-style", choices=STYLES, default="default", help="look of the overlay; colors always follow the theme",
     )
-    display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
-    try:
-        settings = Settings(
-            camera=args.camera,
-            region=Region(*args.region) if args.region else defaults.region,
-            min_cutoff=args.min_cutoff,
-            beta=args.beta,
-            pinch_ratio=args.pinch_ratio,
-            scroll_speed=args.scroll_speed,
-            scroll_dead_zone=args.scroll_dead_zone,
-            zoom_speed=args.zoom_speed,
-            zoom_dead_zone=args.zoom_dead_zone,
-            swipe_distance=args.swipe_distance,
-            slider_step=args.slider_step,
-            head_range=args.head_range,
-            preview=args.preview,
-        )
-        if args.no_hud or args.preview:
-            run(settings)
-        elif not display:
-            logging.info("no display (TTY?): running without the HUD")
-            run(settings)
+    parser.add_argument("-v", "--verbose", action=argparse.BooleanOptionalAction, default=False, help="debug logging")
+    parser.add_argument(
+        "--settings", action="store_true", help="open the settings window first (what the app launcher does)",
+    )
+    return parser
+
+
+def settings_from(args: argparse.Namespace) -> Settings:
+    defaults = Settings()
+    return Settings(
+        camera=args.camera,
+        region=Region(*args.region) if args.region else defaults.region,
+        min_cutoff=args.min_cutoff,
+        beta=args.beta,
+        pinch_ratio=args.pinch_ratio,
+        scroll_speed=args.scroll_speed,
+        scroll_dead_zone=args.scroll_dead_zone,
+        zoom_speed=args.zoom_speed,
+        zoom_dead_zone=args.zoom_dead_zone,
+        swipe_distance=args.swipe_distance,
+        slider_step=args.slider_step,
+        head_range=args.head_range,
+        preview=args.preview,
+    )
+
+
+def save_config(parser: argparse.ArgumentParser, values: dict[str, object], path: Path) -> None:
+    """Write the `values` (by dest) that differ from the parser's defaults as `load_config` reads them back."""
+    path = path.resolve()  # a symlinked config stays a link: the target is replaced
+    lines = []
+    for action in parser._actions:  # no public way to walk the flags
+        if action.dest in ("help", "settings", "preview") or action.dest not in values:
+            continue
+        value = values[action.dest]
+        if value == action.default:
+            continue
+        key = next(s for s in action.option_strings if s.startswith("--"))[2:]
+        if isinstance(action, argparse.BooleanOptionalAction) and value is False:
+            key, text = f"no-{key}", "true"
+        elif isinstance(value, bool):
+            text = "true"
+        elif isinstance(value, str):
+            text = json.dumps(value)
+        elif isinstance(value, (list, tuple)):
+            text = "[" + ", ".join(map(repr, value)) + "]"
         else:
+            text = repr(value)
+        lines.append(f"{key} = {text}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    part.write_text("".join(f"{line}\n" for line in lines))
+    os.replace(part, path)
+
+
+def main() -> None:
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "inputland/config.toml"
+    parser = build_parser(config)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
+    unseen = display and not (sys.stderr and sys.stderr.isatty())  # from a keybinding or launcher: nobody sees the log
+    if unseen:
+        logging.getLogger().addHandler(NotifyHandler())
+    try:
+        load_config(parser, config)
+        args = parser.parse_args()
+        if args.verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
+        if args.settings:
+            resume = os.environ.pop(RESUME, None)
+            if not display:
+                raise RuntimeError(
+                    f"the settings window needs a display (Wayland or X11); edit {config} or use the flags instead"
+                )
+            from inputland.settings import ask
+
+            chosen = ask(build_parser(config), vars(args))
+            if chosen is not None:
+                restart(config, chosen)
+            elif resume:  # a triangle opened it: closing goes back to tracking, as beside the HUD
+                _exec(*(a for a in sys.argv[1:] if a != "--settings"))
+            return
+        settings = settings_from(args)
+        if args.hud and not args.preview and display:
             from inputland.hud import Hud
 
-            Hud(args.hud_corner).run(lambda on_status, stop: run(settings, on_status, stop))
+            hud = Hud(args.hud_corner, args.hud_style)
+            windows: list = []  # the settings windows the triangle opened, beside the HUD
+
+            def open_settings(app: object) -> None:  # in GTK's thread
+                from inputland.settings import show
+
+                show(app, build_parser(config), vars(args), windows)
+
+            hud.run(lambda on_status, stop: run(settings, on_status, stop, lambda: hud.open(open_settings)))
+            if windows and windows[-1].result is not None:
+                restart(config, windows[-1].result)
+        else:
+            if args.hud and not args.preview:
+                logging.info("no display (TTY?): running without the HUD")
+            triangle = threading.Event()  # no HUD to open the settings window beside: stop and start over in it
+            run(settings, stop=triangle, on_settings=triangle.set if display else None)
+            if triangle.is_set():
+                os.environ[RESUME] = "1"
+                _exec(*sys.argv[1:], "--settings")
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError, ValueError) as e:
         logging.error("%s", e)
-        if display and not (sys.stderr and sys.stderr.isatty()):  # from a keybinding or launcher: nobody sees the log
-            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-                subprocess.run(["notify-send", "--app-name=inputland", "inputland stopped", html.escape(str(e))], timeout=2)
+        if unseen:
+            notify("inputland stopped", str(e))
         sys.exit(1)
+
+
+def restart(config: Path, chosen: dict[str, object]) -> None:
+    """Save what the settings window `chosen` and start over with it."""
+    save_config(build_parser(config), chosen, config)
+    _exec(*(["--preview"] if chosen["preview"] else []))
+
+
+def _exec(*args: str) -> None:
+    """Become `python -m inputland args`: a new process frees the HUD's unique-app name and keeps OpenCV's preview
+    out of GTK."""
+    sys.stdout.flush()  # buffered output is lost at exec
+    sys.stderr.flush()
+    # -P: keep the working directory (often ~ under systemd-run) off sys.path
+    os.execv(sys.executable, [sys.executable, "-P", "-m", "inputland", *args])
+
+
+def notify(summary: str, body: str) -> None:
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        subprocess.run(["notify-send", "--app-name=inputland", summary, html.escape(body)], timeout=2)
+
+
+class NotifyHandler(logging.Handler):
+    """Shows the log records marked `extra={"notify": True}` as desktop notifications."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if getattr(record, "notify", False):
+            notify("inputland", record.getMessage())
+
+
+def load_config(parser: argparse.ArgumentParser, path: Path) -> None:
+    """Make the flags set in `path` the parser's defaults, so the command line still wins; no file is fine.
+
+    Each key is a flag without the leading `--` (`min-cutoff = 0.8`, `region = [...]`, `no-hud = true`). The values go
+    through the parser as arguments, so they are checked exactly like the command line.
+    """
+    try:
+        config = tomllib.loads(path.read_text())
+    except FileNotFoundError:
+        return
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"{path}: {e}") from e
+    argv = []
+    for flag, value in config.items():
+        if value is not False:
+            values = [] if value is True else value if isinstance(value, list) else [value]
+            argv += [f"--{flag.replace('_', '-')}", *map(str, values)]
+    parser.exit_on_error = False  # raise instead, so a bad file reaches the notification too
+    try:
+        parser.set_defaults(**vars(parser.parse_args(argv)))
+    except argparse.ArgumentError as e:
+        raise ValueError(f"{path}: {e}") from e
+    finally:
+        parser.exit_on_error = True

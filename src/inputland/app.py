@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 import threading
 import time
 from collections import deque
@@ -13,7 +14,8 @@ from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, pinch_ratio, touches_head,
+    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, is_triangle, pick_pointer_hand, pinch_ratio,
+    touches_head,
 )
 from inputland.pointer import VirtualPointer
 from inputland.tracking import (
@@ -31,12 +33,14 @@ STARTING = "Starting"
 IDLE = "Point to start"
 ABSENT = "Not seen"
 IGNORED = "-"
+READY = "Ready"
 HEAD = "Head"
 TEXTS = (
-    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
-    "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
-    "Paused", "Quit...", HEAD,
+    STARTING, IDLE, ABSENT, IGNORED, READY, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste",
+    "Close", "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
+    "Paused", "Quit...", "Settings...", HEAD,
 )
+BANNERS = (STARTING, IDLE, "Paused", "Quit...", "Settings...")
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,8 @@ class Status:
     """What the loop sees, for the HUD.
 
     `owner` is the hand whose gestures count (the driver, else the last one); `holding` is (side, action) for a hold
-    building up before it acts; `quitting` is the both-fists hold building up.
+    building up before it acts; `quitting` is the both-fists hold building up, `opening` the triangle's (settings
+    window); `progress` (0..1) is how far the hold the HUD shows is.
     """
 
     driver: str | None
@@ -60,6 +65,8 @@ class Status:
     owner: str | None = None
     holding: tuple[str, str] | None = None
     quitting: bool = False
+    opening: bool = False
+    progress: float = 0.0
 
 
 def describe(side: str, status: Status | None) -> tuple[str, str]:
@@ -68,8 +75,10 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return STARTING, "absent"
     if status.quitting:
         return "Quit...", "seen"
+    if status.opening:
+        return "Settings...", "seen"
     if status.paused:
-        return "Paused", "absent"
+        return "Paused", "paused"
     if status.action and side == status.action[0]:
         return status.action[1], "driving"
     if status.adjusting:
@@ -88,17 +97,30 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "At edge" if status.edge else "Moving", "driving"
     elif (gesture := dict(status.hands).get(side)) is None:
         text, state = ABSENT if status.hands else IDLE, "absent"
+    elif gesture == "Pointing_Up":
+        text, state = "Pointing", "seen"
     else:
-        text, state = ("Pointing", "seen") if gesture == "Pointing_Up" else (IGNORED, "absent")
+        text, state = READY if side == status.owner else IGNORED, "absent"
     return text, "owner" if side == status.owner else state
+
+
+def banner(status: Status | None) -> tuple[str, str] | None:
+    """What the HUD shows once for both hands (starting, none in view, paused, quitting, opening the settings), and its
+    CSS state."""
+    shown = describe(SIDES[0], status)
+    return shown if shown[0] in BANNERS and describe(SIDES[1], status) == shown else None
 
 
 def run(
     settings: Settings,
     on_status: Callable[[Status], None] = lambda status: None,
     stop: threading.Event | None = None,
+    on_settings: Callable[[], None] | None = None,
 ) -> None:
-    """Main loop. Reports `on_status` whenever it changes; exits when `stop` is set."""
+    """Main loop. Reports `on_status` whenever it changes; exits when `stop` is set. A triangle held with both hands
+    calls `on_settings`, if given."""
+    if settings.preview:  # OpenCV's wheel bundles Qt with only the xcb plugin: QT_QPA_PLATFORM=wayland aborts it
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
     model, face_model = ensure_model(MODEL_URL, MODEL_SHA256), ensure_model(FACE_MODEL_URL, FACE_MODEL_SHA256)
     with (
         Camera(settings.camera, settings.width, settings.height) as camera,
@@ -121,6 +143,7 @@ def run(
         wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         quitting = Debounce(settings.quit_frames, settings.release_frames)
         head_touch = Debounce(settings.head_touch_frames, settings.release_frames)
+        triangle = Debounce(settings.triangle_frames, settings.release_frames)
         head_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         head_y = OneEuroFilter(settings.min_cutoff, settings.beta)
         log.info(
@@ -131,7 +154,8 @@ def run(
             "swipe one open palm left or right to switch workspace; "
             "hold one palm open and pinch with the other hand, then move it up / down for volume or sideways for "
             "brightness; make a fist to pause, open a palm to resume, hold both fists to quit; "
-            "hold an index finger on your forehead to steer the cursor with your head, again to stop"
+            "hold an index finger on your forehead to steer the cursor with your head, again to stop; "
+            "hold a triangle (thumb tips and index tips together, other fingers curled) for the settings"
         )
         driver: str | None = None
         last_driver: str | None = None
@@ -148,7 +172,7 @@ def run(
         head_anchor = (0.5, 0.5)
         face: Face | None = None
         swipe: deque[tuple[int, float]] = deque()
-        swipe_from = pause_from = 0
+        swipe_from = pause_from = owner_until = 0
         last_frame = time.monotonic()
 
         for n, frame in enumerate(camera.frames()):
@@ -190,7 +214,7 @@ def run(
                 head_anchor = face[NOSE_TIP]
                 for f in (smooth_x, smooth_y, head_x, head_y):
                     f.reset()
-            if not hands and not palms.state:
+            if (not hands and not palms.state) or n >= owner_until:
                 last_driver = None
             hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
 
@@ -245,6 +269,9 @@ def run(
             if _started(love, any(is_love_sign(h) and not is_pinching(h, settings.pinch_ratio) for h in owned)):
                 log.debug("close window")
                 pointer.close_window()
+            if _started(triangle, on_settings is not None and is_triangle(hands, settings.pinch_ratio)):
+                log.info("triangle held: settings window")
+                on_settings()
 
             mover = next(iter(owned), None)
             both_palms = (
@@ -299,18 +326,26 @@ def run(
                 swipe.clear()
                 swipe_from = n + settings.swipe_cooldown_frames
 
+            if driver or head or swipe or palms.state or any(d.state or d.pending(1) for d, _ in actions):
+                owner_until = n + settings.owner_frames  # a thumbs up long after pointing (a call) does nothing
             action = next((name for debounce, name in actions if debounce.state), None)
-            hold = next((name for debounce, name in actions if debounce.pending(settings.engage_frames)), None)
-            holding = (owner, hold) if owner and hold else None
+            hold = next(((d, name) for d, name in actions if d.pending(settings.engage_frames)), None)
+            holding = (owner, hold[1]) if owner and hold else None
+            filling = hold[0] if holding else None
             if toucher and head_touch.pending(settings.engage_frames):
-                holding = toucher, "Head off" if head else "Head"
+                holding, filling = (toucher, "Head off" if head else "Head"), head_touch
+            if triangle.pending(settings.engage_frames):
+                filling = triangle
+            if quitting.pending(settings.engage_frames):
+                filling = quitting
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
                 pressed=pinch.state, action=(owner, action) if owner and action else None, edge=edge,
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
                 adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
-                owner=owner, holding=holding, quitting=quitting.pending(settings.engage_frames),
+                owner=owner, holding=holding, quitting=filling is quitting, opening=filling is triangle,
+                progress=filling.progress() if filling else 0.0,
             )
             if status != last_status:
                 on_status(status)
@@ -359,7 +394,8 @@ def _show_preview(frame: np.ndarray, hands: list[Hand], status: Status, settings
         cv2.circle(frame, (int(x * w), int(y * h)), 7, color, -1)
         for i, text in enumerate((f"{hand.side}: {hand.gesture} {hand.score:.2f}", f"pinch {pinch_ratio(hand):.2f}")):
             cv2.putText(frame, text, (int(x * w) + 10, int(y * h) + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    hud = "   ".join(f"{side[0]} {describe(side, status)[0]}" for side in SIDES)
+    shared = banner(status)
+    hud = shared[0] if shared else "   ".join(f"{side[0]} {describe(side, status)[0]}" for side in SIDES)
     cv2.putText(frame, hud, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     cv2.imshow(PREVIEW_WINDOW, frame)
     return cv2.waitKey(1) & 0xFF not in (ord("q"), 27)

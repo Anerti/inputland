@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from hands import face, hand, love, pinch, point
+from hands import face, hand, love, pinch, point, triangle
 
 from inputland import app
 from inputland.config import Settings
@@ -164,8 +164,9 @@ def test_a_long_hold_shows_while_it_builds_up_then_acts(devices):
     statuses = []
     app.run(Settings(engage_frames=1, release_frames=1, close_frames=3), statuses.append)
 
-    assert [(s.holding, s.action) for s in statuses] == [
-        (None, None), (("Right", "Close"), None), (None, ("Right", "Close")),
+    assert [(s.holding, s.action, s.progress) for s in statuses] == [
+        (None, None, 0.0), (("Right", "Close"), None, 1 / 3), (("Right", "Close"), None, 2 / 3),
+        (None, ("Right", "Close"), 0.0),
     ]
 
 
@@ -176,6 +177,42 @@ def test_status_reports_the_last_driver_as_owner_until_no_hand_is_seen(devices):
     app.run(Settings(engage_frames=1, release_frames=1), statuses.append)
 
     assert [(s.driver, s.owner) for s in statuses] == [("Right", "Right"), (None, "Right"), (None, None)]
+
+
+def test_the_last_driver_owns_gestures_for_a_while_after_pointing_or_while_gesturing(devices):
+    o, rest = point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="None")
+    up, l = hand("Right", 0.5, 0.45, gesture="Thumb_Up"), love("Right", 0.5, 0.45)
+    devices.script = [[o], [rest], [rest], [up], [o], [up], [up], [up], [rest], [o], [l], [l], [l]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, close_frames=3, owner_frames=2), statuses.append)
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["copy", "close"]
+    owners = [s.owner for s in statuses]
+    assert owners[:4] == ["Right", "Right", None, None]
+    assert None not in owners[4:]
+
+
+def test_head_mode_keeps_owning_gestures_while_the_hand_rests(devices):
+    touch, rest, p = point("Right", 0.5, 0.25), hand("Right", 0.3, 0.6, gesture="None"), pinch("Right", 0.3, 0.6)
+    devices.script = [[touch], [touch], *[[rest]] * 6, [p]]
+    devices.faces = [face(0.5, 0.3)] * len(devices.script)
+
+    app.run(Settings(head_touch_frames=2, engage_frames=1, release_frames=1, pinch_frames=1, owner_frames=4))
+
+    assert "down" in devices.events
+
+
+def test_swipes_in_a_row_keep_owning_gestures(devices):
+    def palm(x):
+        return [hand("Right", x, 0.45, gesture="Open_Palm")]
+
+    devices.script = [[point("Right", 0.5, 0.45)], *[palm(0.6), palm(0.3), palm(0.3), palm(0.6), palm(0.6)] * 3]
+
+    app.run(Settings(engage_frames=1, release_frames=1, swipe_frames=3, swipe_cooldown_frames=1, owner_frames=6))
+
+    swipes = [e for e in devices.events if isinstance(e, tuple) and e[0] == "workspace"]
+    assert swipes == [("workspace", 1), ("workspace", -1)] * 3
 
 
 def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
@@ -322,6 +359,26 @@ def test_both_fists_held_quit_even_while_paused(devices):
 
     assert len(devices.events) == 2  # frames 0 and 7: a brief pair or one fist held does not quit, the held pair does
     assert [s.quitting for s in statuses if s.paused] == [True, False, True]  # the HUD warns while it builds up
+    assert [s.progress for s in statuses if s.quitting] == [0.5, 0.5]
+
+
+def test_a_triangle_held_opens_the_settings_once(devices):
+    o, held = point("Right", 0.5, 0.45), triangle(0.5, 0.4)
+    devices.script = [[o], held, [o], held, held, held, held, [o]]
+
+    opened, statuses = [], []
+    settings = Settings(engage_frames=1, release_frames=1, triangle_frames=3)
+    app.run(settings, statuses.append, None, lambda: opened.append(1))
+
+    assert opened == [1]  # a brief triangle does nothing, the held one opens the settings once
+    assert [s.progress for s in statuses if s.opening] == pytest.approx([1 / 3, 1 / 3, 2 / 3])  # the HUD fills
+
+
+def test_a_triangle_does_nothing_without_a_settings_window_to_open(devices):
+    devices.script = [triangle(0.5, 0.4)] * 4
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, triangle_frames=3), statuses.append)
+    assert not any(s.opening for s in statuses)
 
 
 def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):

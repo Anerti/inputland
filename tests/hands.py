@@ -31,6 +31,16 @@ def pinch(side, x, y, button="left"):
     return hand(side, x, y, gesture="None", pinch=button)
 
 
+def triangle(x, y):
+    """Both hands making a triangle: index tips together near (x, y - 0.1), thumb tips near (x, y + 0.05)."""
+    hands = []
+    for side, dx in (("Left", -0.12), ("Right", 0.12)):
+        lm = list(hand(side, x + dx, y, gesture="None").landmarks)
+        lm[INDEX_TIP], lm[THUMB_TIP] = (x - dx / 10, y - 0.1), (x - dx / 10, y + 0.05)
+        hands.append(Hand(side, "None", 0.9, tuple(lm)))
+    return hands
+
+
 def face(x, y):
     """Face landmarks with the nose tip at (x, y): forehead top at y - 0.15, chin at y + 0.15, 0.2 wide."""
     lm = [(x, y)] * 478

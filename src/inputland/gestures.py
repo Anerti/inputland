@@ -55,6 +55,22 @@ def touches_head(hand: Hand, face: Face) -> bool:
     return near_face and min(xs) <= x <= max(xs) and top - height / 3 <= y <= top + height / 3
 
 
+def is_triangle(hands: list[Hand], ratio: float) -> bool:
+    """Two hands making a triangle: index tips together, thumb tips together, each hand's own thumb and index apart.
+
+    Together: closer than `ratio` hand sizes, the pinch threshold. Apart: not pinching, so two pinches touching are not
+    a triangle; the wrists apart too, so one hand MediaPipe reports twice is not either.
+    """
+    if len(hands) != 2:
+        return False
+    a, b = (h.landmarks for h in hands)
+    size = (dist(a[WRIST], a[MIDDLE_MCP]) + dist(b[WRIST], b[MIDDLE_MCP])) / 2
+    return (
+        dist(a[INDEX_TIP], b[INDEX_TIP]) < ratio * size and dist(a[THUMB_TIP], b[THUMB_TIP]) < ratio * size
+        and dist(a[WRIST], b[WRIST]) > size and not any(is_pinching(h, ratio) for h in hands)
+    )
+
+
 def find_grabber(hands: list[Hand], min_score: float, pinch_ratio: float) -> Hand | None:
     """The pinching hand while the other hand holds an open palm (the volume / brightness slider), else None.
 
@@ -106,3 +122,7 @@ class Debounce:
     def pending(self, frames: int) -> bool:
         """Turning True: at least `frames` consecutive True inputs so far, not yet `on_frames`."""
         return not self.state and self._streak >= frames
+
+    def progress(self) -> float:
+        """How far it is to turning True, 0..1: the consecutive True inputs so far over `on_frames`."""
+        return 0.0 if self.state else self._streak / self.on_frames

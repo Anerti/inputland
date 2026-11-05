@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" width="480" alt="inputland logo"></p>
+
 # inputland
 
 Control the mouse with hand gestures from a webcam: point to move, pinch to click, open your palms to scroll. Works on Wayland (Hyprland), X11 and the TTY.
@@ -25,31 +27,37 @@ Point with either index finger and the cursor follows the base of that finger, s
 | <img src="docs/gestures/palm-pinch.jpg" width="180" alt="Open palm and pinch"> | **One palm open, the other hand pinching**, like grabbing a slider: move the pinch up / down for volume, right / left for brightness, about one step per centimeter |
 | <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm. **Both fists** held about 2 seconds: quit |
 | <img src="docs/gestures/forehead.jpg" width="180" alt="Index on forehead"> | **Index fingertip on your forehead** for half a second: steer the cursor with your head (nose tip, starting at the screen center); again to go back to your hand |
+| <img src="docs/gestures/triangle.jpg" width="180" alt="Triangle"> | **Triangle** with both hands, thumb tips together and index tips together, other fingers curled, held about a second: open the settings window beside the HUD; your hand keeps the cursor, so you can use it. Start applies the values and restarts, closing it carries on. Without the HUD (`--preview`, `--no-hud`) it stops and opens the settings window instead; closing it goes back to tracking |
 
-Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, so a stray pose from the other hand does nothing.
+Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, and only within about 3 seconds of it pointing or gesturing, so a stray pose from the other hand, or a thumbs up on a video call, does nothing.
 Scroll and zoom: whichever starts first keeps the gesture until you close either hand. Volume and brightness: whichever direction steps first keeps it until you let go of the pinch. They tap the media keys, so your desktop's own bindings make the change and show it (Omarchy shows its OSD). A pinch that was already dragging stays a drag.
 Copy and paste use Ctrl+Insert and Shift+Insert because, unlike Ctrl+C, they do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
 In head mode, pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
 
 ## HUD
 
-A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors, or your GTK theme's elsewhere. Clicks pass through it.
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it. It needs a compositor with layer-shell (Hyprland, Sway, KDE Plasma, ...): on GNOME and X11 inputland runs without it, and `--preview` shows what it tracks. `--hud-style` changes its look, always in your theme colors:
+
+- `cyberpunk`: slanted neon-edged panels.
+- `sticker`: rounded, outlined labels.
+- `terminal`: a one-line prompt-style bar.
 
 | Label | Meaning |
 | ----- | ------- |
-| `Starting` · `Point to start` · `Not seen` | Loading, no hand in view, this hand out of view |
+| `Starting` · `Point to start` · `Not seen` | Loading, no hand in view (these two span the HUD), this hand out of view |
 | `Moving` | This hand moves the cursor (highlighted) |
 | `Pointing` | This hand points, but the other one has the cursor |
 | `Pinch` | The left button is held (click or drag) |
 | `Right click` · `Copy` · `Paste` · `Close` | The action just sent |
 | `Scrolling` · `Zooming` | Two open palms |
 | `Slider` · `Volume` · `Brightness` | Palm plus pinch |
-| `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time |
+| `Close...` · `Paste...` · `Head...` · `Head off...` · `Settings...` | A hold building up, so you can let go in time; the segment fills as it does |
 | `At edge` | The hand is outside the mapped region |
-| `Paused` · `Head` | Paused, or in head mode |
+| `Paused` · `Head` | Paused (tinted, across the HUD), or in head mode |
+| `Ready` | This hand's gestures count, in a pose that does nothing |
 | `-` | A pose that does nothing |
 
-When no hand moves the cursor, the one whose gestures count (the last to point) is underlined.
+When no hand moves the cursor, the one whose gestures count (the last to point) is underlined. A hand out of view or in a pose that does nothing is dimmed.
 
 ## Install
 
@@ -66,15 +74,25 @@ git clone https://github.com/Anerti/inputland.git ~/Projects/inputland && cd ~/P
 
 It needs [uv](https://docs.astral.sh/uv/) and asks for `sudo` only for the package and the permissions. With [gum](https://github.com/charmbracelet/gum) installed (it ships with Omarchy) it shows menus and progress spinners; without it, plain prompts. After the first setup, log out and back in so the group membership applies.
 
+On distributions other than Arch, install the packages `uv sync` builds PyGObject with, and the HUD's library, first:
+
+```sh
+sudo apt install gcc pkg-config python3-dev libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-4.0 gir1.2-gtk4layershell-1.0  # Debian, Ubuntu
+sudo dnf install gcc pkg-config python3-devel cairo-gobject-devel gobject-introspection-devel gtk4 gtk4-layer-shell          # Fedora
+```
+
 ## Usage
 
 ```sh
 inputland            # run with the HUD (Ctrl+C to quit)
 inputland --preview  # camera view with the HUD's text and pinch ratios; green box = active (q/Esc quits)
 inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
+inputland --settings # settings window; Start saves to config.toml and starts
 ```
 
-Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error as a desktop notification. To start it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
+The app launcher entry opens the settings window, the same as `inputland --settings` (or hold a triangle while inputland runs): every flag below, in three tabs (Look, Feel, Camera), with sliders, a corner picker, style previews and a tracking area you drag over the camera frame, and a Gestures tab with what each gesture does. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
+
+Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error, or a warning such as a missing GPU, as a desktop notification. Launching it again stops it, so the launcher entry or a keybinding toggles it (with the HUD; `--no-hud` runs stop with Ctrl+C or both fists). To toggle it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
 ### Calibration
 
@@ -93,9 +111,20 @@ Started without a terminal (from the app launcher, where it is listed as *inputl
 | `--head-range` | `0.12` | In head mode: nose travel (fraction of the frame) that crosses the whole screen; half of it from where head mode started reaches an edge. Lower = smaller head movements, more jitter. |
 | `--camera N` | `0` | Use `/dev/videoN`. |
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
+| `--hud-style` | `default` | Look of the HUD: `cyberpunk`, `sticker`, `terminal`. Colors always follow your theme. |
+| `--settings` | off | Open the settings window instead of starting right away. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
-Flags are not saved; keep your values in a shell alias, e.g. `alias inputland='inputland --region 0.3 0.25 0.7 0.65'`, or in your keybinding.
+To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, and `--hud`, `--no-preview` and `--no-verbose` undo a `true`:
+
+```toml
+region = [0.3, 0.25, 0.7, 0.65]
+beta = 12.0
+hud-corner = "top-left"
+no-hud = true
+```
+
+The settings window rewrites this file with only the values that differ from the defaults, so comments in it are lost.
 
 With several monitors the region maps onto the whole screen layout, so the same hand movement covers all of them and each monitor gets less precision.
 
@@ -113,6 +142,8 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 | `pointer.py` | uinput absolute pointer (evdev), plus the copy/paste, volume and brightness keys and closing the window |
 | `app.py` | Main loop wiring the above, what the HUD says (`describe`), calibration preview |
 | `hud.py` | GTK4 layer-shell overlay; GTK owns the main thread, the loop runs in a worker thread and sends `Status` updates via `GLib.idle_add` |
+| `styles.py` | The drawn HUD styles (Cyberpunk, Sticker, Terminal): Cairo, no GTK |
+| `settings.py` | The settings window (GTK), built from the CLI flags |
 | `cli.py` | Argument parsing, logging, exit codes |
 
 New gestures go in `gestures.py`; new outputs (clicks, keys, `hyprctl`) go next to `pointer.py`.

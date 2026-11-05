@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import pytest
-from hands import face, hand, love, pinch, point
+from hands import face, hand, love, pinch, point, triangle
 
 from inputland.config import Region
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, pinch_ratio, touches_head,
+    Debounce, is_gesture, is_love_sign, is_pinching, is_triangle, pick_pointer_hand, pinch_ratio, touches_head,
 )
 from inputland.tracking import WRIST, Hand
 
@@ -50,10 +50,11 @@ def test_debounce_needs_consecutive_frames():
 
 def test_debounce_reports_a_hold_building_up_from_its_nth_frame_until_it_turns_on():
     d = Debounce(on_frames=4, off_frames=2)
-    steps = [(d.update(True), d.pending(2)) for _ in range(4)]
-    assert steps == [(False, False), (False, True), (False, True), (True, False)]
+    steps = [(d.update(True), d.pending(2), d.progress()) for _ in range(4)]
+    assert steps == [(False, False, 0.25), (False, True, 0.5), (False, True, 0.75), (True, False, 0.0)]
     d.update(False)
     assert not d.pending(1)
+    assert d.progress() == 0.0
 
 
 def test_is_gesture_checks_label_and_score():
@@ -340,7 +341,7 @@ def test_cli_error_is_a_desktop_notification_without_a_terminal(monkeypatch, ter
 
     from inputland import cli
 
-    def fail(settings):
+    def fail(settings, *args, **kwargs):
         raise ValueError("need 0 < pinch_ratio < 1, got 2.0")
 
     sent = []
@@ -366,6 +367,17 @@ def test_index_tip_on_the_forehead_touches_the_head():
     near = list(point("Right", 0.5, 0.25).landmarks)
     near[WRIST] = (0.5, 0.45)
     assert not touches_head(Hand("Right", "Pointing_Up", 0.9, tuple(near)), head)
+
+
+def test_triangle_needs_index_tips_and_thumb_tips_together_and_each_hand_open():
+    left, right = triangle(0.5, 0.4)
+    assert is_triangle([left, right], 0.35)
+    assert not is_triangle([left], 0.35)
+    assert not is_triangle([point("Left", 0.38, 0.4), point("Right", 0.62, 0.4)], 0.35)  # tips apart
+    pinched = [Hand(h.side, h.gesture, h.score, tuple(h.landmarks[i] if i != 4 else h.landmarks[8] for i in range(21)))
+               for h in (left, right)]
+    assert not is_triangle(pinched, 0.35)  # two pinches touching
+    assert not is_triangle([point("Left", 0.5, 0.4), point("Right", 0.5, 0.4)], 0.35)  # one hand reported twice
 
 
 def test_face_model_is_cached_next_to_the_hand_model(monkeypatch, tmp_path):
