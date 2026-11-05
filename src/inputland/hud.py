@@ -203,8 +203,9 @@ class Hud:
     def run(self, worker: Worker) -> None:
         """Show the HUD and run `worker(publish, stop)` in a background thread.
 
-        Returns when the worker finishes, on Ctrl+C or when inputland is launched again (GTK hands a second launch to
-        the running instance, so the launcher or a keybinding toggles it); re-raises the worker's error.
+        Returns when the worker finishes, on Ctrl+C, on Start in the settings window or when inputland is launched again
+        (GTK hands a second launch to the running instance, so the launcher or a keybinding toggles it); re-raises the
+        worker's error.
         """
         stop = threading.Event()
         errors: list[BaseException] = []

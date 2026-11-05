@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import threading
 from types import SimpleNamespace
@@ -169,8 +170,23 @@ def test_a_triangle_beside_the_hud_opens_the_settings_window_and_start_restarts(
 def test_a_triangle_without_the_hud_starts_over_in_the_settings_window(config, window, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["inputland", "--no-hud", "--beta", "12"])
     monkeypatch.setattr(cli, "run", lambda settings, stop, on_settings: (on_settings(), stop.is_set()))
+    monkeypatch.setenv(cli.RESUME, "")  # so the value main sets is undone after the test
     cli.main()
     assert window.execs == [[sys.executable, "-P", "-m", "inputland", "--no-hud", "--beta", "12", "--settings"]]
+    assert os.environ[cli.RESUME] == "1"
+
+
+@pytest.mark.parametrize(("answer", "argv"), [(None, ["--no-hud", "--beta", "12"]), ({"beta": 12.0}, [])])
+def test_closing_the_window_a_triangle_opened_without_the_hud_goes_back_to_tracking(
+    config, window, monkeypatch, answer, argv,
+):
+    monkeypatch.setattr(sys, "argv", ["inputland", "--no-hud", "--beta", "12", "--settings"])
+    monkeypatch.setenv(cli.RESUME, "1")
+    if answer:
+        window.answer = vars(cli.build_parser(config.path).parse_args([])) | answer
+    cli.main()
+    assert window.execs == [[sys.executable, "-P", "-m", "inputland", *argv]]  # Start: the saved config instead
+    assert cli.RESUME not in os.environ  # not passed on to that run
 
 
 def test_a_triangle_on_the_tty_opens_nothing(config, monkeypatch):

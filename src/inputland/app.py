@@ -105,7 +105,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
 
 
 def banner(status: Status | None) -> tuple[str, str] | None:
-    """What the HUD shows once for both hands (starting, none in view, paused, quitting), and its CSS state."""
+    """What the HUD shows once for both hands (starting, none in view, paused, quitting, opening the settings), and its
+    CSS state."""
     shown = describe(SIDES[0], status)
     return shown if shown[0] in BANNERS and describe(SIDES[1], status) == shown else None
 

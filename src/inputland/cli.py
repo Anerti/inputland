@@ -14,6 +14,8 @@ from inputland.app import run
 from inputland.config import Region, Settings
 from inputland.styles import STYLES
 
+RESUME = "INPUTLAND_RESUME"  # set across the exec when a triangle without the HUD opened the settings window
+
 
 def build_parser(config: Path) -> argparse.ArgumentParser:
     defaults = Settings()
@@ -142,6 +144,7 @@ def main() -> None:
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
         if args.settings:
+            resume = os.environ.pop(RESUME, None)
             if not display:
                 raise RuntimeError(
                     f"the settings window needs a display (Wayland or X11); edit {config} or use the flags instead"
@@ -151,6 +154,8 @@ def main() -> None:
             chosen = ask(build_parser(config), vars(args))
             if chosen is not None:
                 restart(config, chosen)
+            elif resume:  # a triangle opened it: closing goes back to tracking, as beside the HUD
+                _exec(*(a for a in sys.argv[1:] if a != "--settings"))
             return
         settings = settings_from(args)
         if args.hud and not args.preview and display:
@@ -173,6 +178,7 @@ def main() -> None:
             triangle = threading.Event()  # no HUD to open the settings window beside: stop and start over in it
             run(settings, stop=triangle, on_settings=triangle.set if display else None)
             if triangle.is_set():
+                os.environ[RESUME] = "1"
                 _exec(*sys.argv[1:], "--settings")
     except KeyboardInterrupt:
         pass
