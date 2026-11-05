@@ -69,3 +69,9 @@ def test_cameras_lists_capture_devices_by_name(tmp_path):
 )
 def test_dragging_the_tracking_area_keeps_it_inside_the_frame(grab, dx, dy, box):
     assert settings.drag((0.25, 0.2, 0.75, 0.7), grab, dx, dy) == box
+
+
+@needs_gtk
+def test_the_gestures_tab_shows_every_gesture_picture():
+    shown = [picture for rows in settings.GESTURES.values() for picture, _, _ in rows]
+    assert sorted(shown) == sorted(p.stem for p in (settings.LOGO.parent / "gestures").glob("*.jpg"))

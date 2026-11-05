@@ -1,4 +1,5 @@
-"""Settings window (GTK4): every CLI flag with its current value, in three tabs (Look, Feel, Camera).
+"""Settings window (GTK4): every CLI flag with its current value, in three tabs (Look, Feel, Camera), and a
+Gestures tab that shows what each gesture does.
 
 `ask` only shows the window and returns the edited values; saving and starting is the caller's job.
 """
@@ -93,6 +94,31 @@ MIN_REGION = 0.1  # smallest tracking-area side, fraction of the frame
 
 LOGO = Path(__file__).resolve().parents[2] / "docs/logo.svg"  # the repo's, like the launcher entry's icon
 
+GESTURES = {  # heading -> (picture in docs/gestures, gesture, what it does), as in the README's Gestures table
+    "Cursor": (
+        ("point", "Point", "either index finger moves the cursor"),
+        ("pinch", "Pinch", "thumb to index tip while pointing: left click; twice to double click, hold and move to "
+                           "drag"),
+        ("victory", "Victory", "index and middle finger up: right click"),
+        ("forehead", "Index on the forehead", "held half a second: steer the cursor with your head; again to go back "
+                                              "to your hand"),
+    ),
+    "Shortcuts": (
+        ("thumbs-up", "Thumbs up", "copy (Ctrl+Insert)"),
+        ("thumbs-down", "Thumbs down", "held a moment: paste (Shift+Insert)"),
+        ("love", "Index and pinky out", "held about a second: close the focused window"),
+        ("two-palms", "Two open palms", "move the pointing hand up or down to scroll; spread the palms apart or "
+                                        "together to zoom"),
+        ("palm", "One open palm", "swiped left or right: next or previous workspace (Hyprland)"),
+        ("palm-pinch", "One palm open, the other hand pinching", "move the pinch up or down for volume, sideways for "
+                                                                 "brightness"),
+    ),
+    "inputland": (
+        ("fist", "Fist", "pause, until you open a palm; both fists held about 2 seconds: quit"),
+        ("triangle", "Triangle", "thumb tips and index tips together, held about a second: open this window"),
+    ),
+}
+
 CSS = """
 window.inputland-settings { background: @bg; color: @fg; }
 .inputland-settings label.title { font-weight: 800; font-size: 18px; }
@@ -141,6 +167,7 @@ window.inputland-settings { background: @bg; color: @fg; }
   border-radius: 7px; }
 .inputland-settings *:focus-visible { outline-color: alpha(@accent, 0.8); }
 .inputland-settings .error { color: mix(#e01b24, @fg, 0.3); }
+.inputland-settings .gesture { border-radius: 8px; }
 """
 
 Input = tuple[Gtk.Widget, Callable[[], object], Callable[[object], None]]  # widget, getter, setter
@@ -406,6 +433,32 @@ def logo() -> Gtk.Widget:
     return area
 
 
+def gestures_page() -> Gtk.Widget:
+    """What each gesture does, with its picture, in the cards the settings use."""
+    page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=18, margin_end=18, margin_bottom=18)
+    page.append(Gtk.Label(label="Right click and the shortcuts count only from the hand that last pointed, within "
+                                "about 3 seconds.", xalign=0, wrap=True, margin_top=16, css_classes=["dim"]))
+    for heading, rows in GESTURES.items():
+        page.append(Gtk.Label(label=heading.upper(), xalign=0, css_classes=["section"]))
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card"])
+        for picture, gesture, action in rows:
+            if card.get_first_child():
+                card.append(Gtk.Separator())
+            image = Gtk.Image.new_from_file(str(LOGO.parent / "gestures" / f"{picture}.jpg"))
+            image.set_pixel_size(72)
+            image.set_overflow(Gtk.Overflow.HIDDEN)  # clips it to the rounded corners
+            image.add_css_class("gesture")
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True, valign=Gtk.Align.CENTER)
+            text.append(Gtk.Label(label=gesture, xalign=0, wrap=True))
+            text.append(Gtk.Label(label=action, xalign=0, wrap=True, css_classes=["dim"]))
+            row = Gtk.Box(spacing=14, css_classes=["item"])
+            row.append(image)
+            row.append(text)
+            card.append(row)
+        page.append(card)
+    return Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
+
+
 class _Window:
     """The settings window: `values` fill the inputs; `result` is the edited values after a valid Start."""
 
@@ -438,6 +491,7 @@ class _Window:
                 page.append(card)
             scroll = Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
             self._stack.add_titled(scroll, tab, tab)
+        self._stack.add_titled(gestures_page(), "Gestures", "Gestures")
 
         header = Gtk.Box(margin_top=16, margin_start=18, margin_end=18, margin_bottom=12)
         header.append(logo())

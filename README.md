@@ -90,7 +90,7 @@ inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is
 inputland --settings # settings window; Start saves to config.toml and starts
 ```
 
-The app launcher entry opens the settings window, the same as `inputland --settings` (or hold a triangle while inputland runs): every flag below, in three tabs (Look, Feel, Camera), with sliders, a corner picker, style previews and a tracking area you drag over the camera frame. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
+The app launcher entry opens the settings window, the same as `inputland --settings` (or hold a triangle while inputland runs): every flag below, in three tabs (Look, Feel, Camera), with sliders, a corner picker, style previews and a tracking area you drag over the camera frame, and a Gestures tab with what each gesture does. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
 
 Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error, or a warning such as a missing GPU, as a desktop notification. Launching it again stops it, so the launcher entry or a keybinding toggles it (with the HUD; `--no-hud` runs stop with Ctrl+C or both fists). To toggle it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
