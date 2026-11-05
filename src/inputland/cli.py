@@ -101,6 +101,7 @@ def settings_from(args: argparse.Namespace) -> Settings:
 
 def save_config(parser: argparse.ArgumentParser, values: dict[str, object], path: Path) -> None:
     """Write the `values` (by dest) that differ from the parser's defaults as `load_config` reads them back."""
+    path = path.resolve()  # a symlinked config stays a link: the target is replaced
     lines = []
     for action in parser._actions:  # no public way to walk the flags
         if action.dest in ("help", "settings", "preview") or action.dest not in values:
@@ -153,7 +154,9 @@ def main() -> None:
             sys.stdout.flush()  # buffered output is lost at exec
             sys.stderr.flush()
             # a new process frees the HUD's unique-app name and keeps OpenCV's preview out of GTK
-            os.execv(sys.executable, [sys.executable, "-m", "inputland", *(["--preview"] if chosen["preview"] else [])])
+            # -P: keep the working directory (often ~ under systemd-run) off sys.path
+            argv = [sys.executable, "-P", "-m", "inputland", *(["--preview"] if chosen["preview"] else [])]
+            os.execv(sys.executable, argv)
             return
         settings = settings_from(args)
         if not args.hud or args.preview:

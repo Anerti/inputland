@@ -54,7 +54,9 @@ def test_only_log_records_marked_notify_reach_the_desktop(monkeypatch):
     assert sent == [["notify-send", "--app-name=inputland", "inputland", "GPU &lt;unavailable&gt;"]]
 
 
-@pytest.mark.parametrize("text", ['beta = "fast"', "speed = 3", "region = [0.3]", 'hud-corner = "middle"', 'hud-style = "neon"', "beta ="])
+@pytest.mark.parametrize(
+    "text", ['beta = "fast"', "speed = 3", "region = [0.3]", 'hud-corner = "middle"', 'hud-style = "neon"', "beta ="]
+)
 def test_bad_config_file_exits_naming_it(config, monkeypatch, caplog, text):
     config.path.write_text(text)
     monkeypatch.setattr(sys, "argv", ["inputland"])
@@ -104,6 +106,18 @@ def test_save_config_creates_the_directory_and_replaces_atomically(tmp_path):
     assert list(path.parent.iterdir()) == [path]
 
 
+def test_save_config_keeps_a_symlinked_config(tmp_path):
+    target = tmp_path / "dotfiles/config.toml"
+    target.parent.mkdir()
+    target.write_text("")
+    link = tmp_path / "config.toml"
+    link.symlink_to(target)
+    cli.save_config(cli.build_parser(link), {"beta": 12.0}, link)
+
+    assert link.is_symlink()
+    assert target.read_text() == "beta = 12.0\n"
+
+
 def test_settings_from_refuses_invalid_values(tmp_path):
     args = cli.build_parser(tmp_path / "c.toml").parse_args(["--region", "0.7", "0.2", "0.3", "0.6"])
     with pytest.raises(ValueError, match="invalid region"):
@@ -126,7 +140,7 @@ def test_start_in_the_window_saves_and_restarts_without_the_window(config, windo
     window.answer = vars(cli.build_parser(config.path).parse_args([])) | {"beta": 12.0, "preview": True}
     cli.main()
     assert config.path.read_text() == "beta = 12.0\n"
-    assert window.execs == [[sys.executable, "-m", "inputland", "--preview"]]
+    assert window.execs == [[sys.executable, "-P", "-m", "inputland", "--preview"]]
     assert config.runs == []
 
 
