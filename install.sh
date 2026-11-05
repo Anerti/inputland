@@ -106,7 +106,7 @@ $LAUNCHER_MARK
 Type=Application
 Name=inputland
 Comment=Control the mouse with hand gestures
-Exec=systemd-run --user --collect "$LAUNCHER"
+Exec=systemd-run --user --collect "$LAUNCHER" --settings
 Icon=$ROOT/docs/logo.svg
 Terminal=false
 Categories=Utility;Accessibility;

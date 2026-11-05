@@ -108,3 +108,35 @@ def test_settings_from_refuses_invalid_values(tmp_path):
     args = cli.build_parser(tmp_path / "c.toml").parse_args(["--region", "0.7", "0.2", "0.3", "0.6"])
     with pytest.raises(ValueError, match="invalid region"):
         cli.settings_from(args)
+
+
+@pytest.fixture
+def window(config, monkeypatch):
+    """`--settings` with a fake window: `.answer` is what it returns; `.execs` the argv of each exec."""
+    fake = SimpleNamespace(answer=None, execs=[])
+    monkeypatch.setitem(sys.modules, "inputland.settings", SimpleNamespace(ask=lambda parser, values: fake.answer))
+    monkeypatch.setattr(cli.os, "execv", lambda path, argv: fake.execs.append(argv))
+    monkeypatch.setattr(sys, "argv", ["inputland", "--settings"])
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: True)  # no notification handler
+    return fake
+
+
+def test_start_in_the_window_saves_and_restarts_without_the_window(config, window):
+    window.answer = vars(cli.build_parser(config.path).parse_args([])) | {"beta": 12.0, "preview": True}
+    cli.main()
+    assert config.path.read_text() == "beta = 12.0\n"
+    assert window.execs == [[sys.executable, "-m", "inputland", "--preview"]]
+    assert config.runs == []
+
+
+def test_closing_the_window_saves_and_starts_nothing(config, window):
+    cli.main()
+    assert not config.path.exists() and window.execs == [] and config.runs == []
+
+
+def test_settings_without_a_display_says_so(config, window, monkeypatch, caplog):
+    monkeypatch.delenv("WAYLAND_DISPLAY")
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert "needs a display" in caplog.text and window.execs == []

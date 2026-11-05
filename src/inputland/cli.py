@@ -139,6 +139,22 @@ def main() -> None:
         args = parser.parse_args()
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
+        if args.settings:
+            if not display:
+                raise RuntimeError(
+                    f"the settings window needs a display (Wayland or X11); edit {config} or use the flags instead"
+                )
+            from inputland.settings import ask
+
+            chosen = ask(build_parser(config), vars(args))
+            if chosen is None:
+                return
+            save_config(build_parser(config), chosen, config)
+            sys.stdout.flush()  # buffered output is lost at exec
+            sys.stderr.flush()
+            # a new process frees the HUD's unique-app name and keeps OpenCV's preview out of GTK
+            os.execv(sys.executable, [sys.executable, "-m", "inputland", *(["--preview"] if chosen["preview"] else [])])
+            return
         settings = settings_from(args)
         if not args.hud or args.preview:
             run(settings)

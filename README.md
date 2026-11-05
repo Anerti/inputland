@@ -79,7 +79,10 @@ It needs [uv](https://docs.astral.sh/uv/) and asks for `sudo` only for the packa
 inputland            # run with the HUD (Ctrl+C to quit)
 inputland --preview  # camera view with the HUD's text and pinch ratios; green box = active (q/Esc quits)
 inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
+inputland --settings # settings window; Start saves to config.toml and starts
 ```
+
+The app launcher entry opens the settings window, the same as `inputland --settings`: every flag below as a field. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
 
 Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error, or a warning such as a missing GPU, as a desktop notification. Launching it again stops it, so the launcher entry or a keybinding toggles it (with the HUD; `--no-hud` runs stop with Ctrl+C or both fists). To toggle it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
@@ -101,6 +104,7 @@ Started without a terminal (from the app launcher, where it is listed as *inputl
 | `--camera N` | `0` | Use `/dev/videoN`. |
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 | `--hud-style` | `default` | Look of the HUD: `cyberpunk`, `sticker`, `terminal`. Colors always follow your theme. |
+| `--settings` | off | Open the settings window instead of starting right away. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
 To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, and `--hud`, `--no-preview` and `--no-verbose` undo a `true`:
@@ -111,6 +115,8 @@ beta = 12.0
 hud-corner = "top-left"
 no-hud = true
 ```
+
+The settings window rewrites this file with only the values that differ from the defaults, so comments in it are lost.
 
 With several monitors the region maps onto the whole screen layout, so the same hand movement covers all of them and each monitor gets less precision.
 
