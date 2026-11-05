@@ -5,6 +5,8 @@ import logging
 import os
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 from inputland.app import run
 from inputland.config import Region, Settings
@@ -12,7 +14,10 @@ from inputland.config import Region, Settings
 
 def main() -> None:
     defaults = Settings()
-    parser = argparse.ArgumentParser(description="Control the mouse with hand gestures.")
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "inputland/config.toml"
+    parser = argparse.ArgumentParser(
+        description=f"Control the mouse with hand gestures. Flags can also be set in {config}.",
+    )
     parser.add_argument("--camera", type=int, default=defaults.camera, help="camera index (/dev/videoN)")
     parser.add_argument("--preview", action="store_true", help="show the camera view for calibration, replaces the HUD (q/Esc quits)")
     parser.add_argument(
@@ -59,14 +64,13 @@ def main() -> None:
         help="screen corner of the overlay",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
     try:
+        load_config(parser, config)
+        args = parser.parse_args()
+        if args.verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
         settings = Settings(
             camera=args.camera,
             region=Region(*args.region) if args.region else defaults.region,
@@ -99,3 +103,29 @@ def main() -> None:
             with contextlib.suppress(OSError, subprocess.TimeoutExpired):
                 subprocess.run(["notify-send", "--app-name=inputland", "inputland stopped", html.escape(str(e))], timeout=2)
         sys.exit(1)
+
+
+def load_config(parser: argparse.ArgumentParser, path: Path) -> None:
+    """Make the flags set in `path` the parser's defaults, so the command line still wins; no file is fine.
+
+    Each key is a flag without the leading `--` (`min-cutoff = 0.8`, `region = [...]`, `no-hud = true`). The values go
+    through the parser as arguments, so they are checked exactly like the command line.
+    """
+    try:
+        config = tomllib.loads(path.read_text())
+    except FileNotFoundError:
+        return
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"{path}: {e}") from e
+    argv = []
+    for flag, value in config.items():
+        if value is not False:
+            values = [] if value is True else value if isinstance(value, list) else [value]
+            argv += [f"--{flag.replace('_', '-')}", *map(str, values)]
+    parser.exit_on_error = False  # raise instead, so a bad file reaches the notification too
+    try:
+        parser.set_defaults(**vars(parser.parse_args(argv)))
+    except argparse.ArgumentError as e:
+        raise ValueError(f"{path}: {e}") from e
+    finally:
+        parser.exit_on_error = True

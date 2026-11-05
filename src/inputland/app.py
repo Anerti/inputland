@@ -44,7 +44,8 @@ class Status:
     """What the loop sees, for the HUD.
 
     `owner` is the hand whose gestures count (the driver, else the last one); `holding` is (side, action) for a hold
-    building up before it acts; `quitting` is the both-fists hold building up.
+    building up before it acts; `quitting` is the both-fists hold building up; `progress` (0..1) is how far the hold
+    the HUD shows is.
     """
 
     driver: str | None
@@ -60,6 +61,7 @@ class Status:
     owner: str | None = None
     holding: tuple[str, str] | None = None
     quitting: bool = False
+    progress: float = 0.0
 
 
 def describe(side: str, status: Status | None) -> tuple[str, str]:
@@ -300,17 +302,21 @@ def run(
                 swipe_from = n + settings.swipe_cooldown_frames
 
             action = next((name for debounce, name in actions if debounce.state), None)
-            hold = next((name for debounce, name in actions if debounce.pending(settings.engage_frames)), None)
-            holding = (owner, hold) if owner and hold else None
+            hold = next(((d, name) for d, name in actions if d.pending(settings.engage_frames)), None)
+            holding = (owner, hold[1]) if owner and hold else None
+            filling = hold[0] if holding else None
             if toucher and head_touch.pending(settings.engage_frames):
-                holding = toucher, "Head off" if head else "Head"
+                holding, filling = (toucher, "Head off" if head else "Head"), head_touch
+            if quitting.pending(settings.engage_frames):
+                filling = quitting
             status = Status(
                 driver, tuple(sorted((h.side, h.gesture) for h in hands)),
                 pressed=pinch.state, action=(owner, action) if owner and action else None, edge=edge,
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
                 adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
-                owner=owner, holding=holding, quitting=quitting.pending(settings.engage_frames),
+                owner=owner, holding=holding, quitting=filling is quitting,
+                progress=filling.progress() if filling else 0.0,
             )
             if status != last_status:
                 on_status(status)

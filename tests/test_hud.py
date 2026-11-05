@@ -1,3 +1,6 @@
+import shutil
+import time
+
 import pytest
 
 from inputland.app import TEXTS, Status, describe
@@ -77,3 +80,24 @@ def test_hud_highlight_is_the_theme_accent_with_readable_text(tmp_path, monkeypa
 def test_hud_without_omarchy_follows_the_gtk_theme(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert hud.theme_css() == hud.GTK_THEME_CSS
+
+
+@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+def test_hud_notices_omarchy_swapping_in_each_new_theme(tmp_path, monkeypatch):
+    current = tmp_path / "omarchy/current"
+    (current / "theme").mkdir(parents=True)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    changes = []
+    monitor = hud.watch_theme(lambda: changes.append(hud.theme_css()))
+
+    for accent in ("#1e66f5", "#7aa2f7"):  # the second swap replaces the directory the first one moved in
+        (current / "next-theme").mkdir()  # what omarchy-theme-set does
+        (current / "next-theme/colors.toml").write_text(f'accent = "{accent}"')
+        shutil.rmtree(current / "theme")
+        (current / "next-theme").rename(current / "theme")
+        deadline = time.monotonic() + 2
+        while not any(accent in css for css in changes) and time.monotonic() < deadline:
+            hud.GLib.MainContext.default().iteration(False)
+            time.sleep(0.01)
+        assert any(accent in css for css in changes)
+    monitor.cancel()

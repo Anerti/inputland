@@ -106,3 +106,7 @@ class Debounce:
     def pending(self, frames: int) -> bool:
         """Turning True: at least `frames` consecutive True inputs so far, not yet `on_frames`."""
         return not self.state and self._streak >= frames
+
+    def progress(self) -> float:
+        """How far it is to turning True, 0..1: the consecutive True inputs so far over `on_frames`."""
+        return 0.0 if self.state else self._streak / self.on_frames

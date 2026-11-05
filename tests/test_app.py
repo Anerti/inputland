@@ -164,8 +164,9 @@ def test_a_long_hold_shows_while_it_builds_up_then_acts(devices):
     statuses = []
     app.run(Settings(engage_frames=1, release_frames=1, close_frames=3), statuses.append)
 
-    assert [(s.holding, s.action) for s in statuses] == [
-        (None, None), (("Right", "Close"), None), (None, ("Right", "Close")),
+    assert [(s.holding, s.action, s.progress) for s in statuses] == [
+        (None, None, 0.0), (("Right", "Close"), None, 1 / 3), (("Right", "Close"), None, 2 / 3),
+        (None, ("Right", "Close"), 0.0),
     ]
 
 
@@ -322,6 +323,7 @@ def test_both_fists_held_quit_even_while_paused(devices):
 
     assert len(devices.events) == 2  # frames 0 and 7: a brief pair or one fist held does not quit, the held pair does
     assert [s.quitting for s in statuses if s.paused] == [True, False, True]  # the HUD warns while it builds up
+    assert [s.progress for s in statuses if s.quitting] == [0.5, 0.5]
 
 
 def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):

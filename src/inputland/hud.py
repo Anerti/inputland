@@ -59,6 +59,24 @@ CSS = """
 .segment.driving { background: @active; color: @on_active; font-weight: bold; }
 """
 
+# A hold's progress fills its segment from the left: one class per tenth, as GTK CSS has no per-widget values.
+CSS += "".join(
+    f".segment.fill-{i} {{ background-image: linear-gradient(to right, alpha(@fg, 0.2) {i}0%, transparent {i}0%); }}\n"
+    for i in range(1, 11)
+)
+
+
+def omarchy_current() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "omarchy/current"
+
+
+def watch_theme(on_change: Callable[[], None]) -> Gio.FileMonitor:
+    """Call `on_change` when Omarchy switches theme: it swaps a staged copy in for `current/theme`, so the watch is on
+    `current`, not on the theme's files. Keep the monitor referenced: it stops once collected."""
+    monitor = Gio.File.new_for_path(str(omarchy_current())).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+    monitor.connect("changed", lambda *_: on_change())
+    return monitor
+
 
 def theme_css() -> str:
     """Color definitions from the current Omarchy theme, else from the GTK theme (any desktop).
@@ -66,10 +84,9 @@ def theme_css() -> str:
     The highlight is the theme's `active_border_color`, else its `accent` (every theme has one, few the former), with
     black or white text, whichever contrasts more: they tie at luminance 0.179, so either reaches 4.5:1 (WCAG AA).
     """
-    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
     colors = dict(DEFAULT_COLORS)
     try:
-        theme = tomllib.loads((state / "omarchy/current/theme/colors.toml").read_text())
+        theme = tomllib.loads((omarchy_current() / "theme/colors.toml").read_text())
     except (OSError, tomllib.TOMLDecodeError) as e:
         log.debug("no Omarchy theme (%s); using the GTK theme's colors", e)
         return GTK_THEME_CSS
@@ -130,6 +147,7 @@ class Hud:
         css = Gtk.CssProvider()
         css.load_from_string(theme_css() + CSS)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._theme = watch_theme(lambda: css.load_from_string(theme_css() + CSS))
 
         window = Gtk.ApplicationWindow(application=app)
         LayerShell.init_for_window(window)
@@ -155,5 +173,6 @@ class Hud:
     def _render(self, status: Status | None) -> None:
         for side, label in self._segments.items():
             text, state = describe(side, status)
+            fill = round(status.progress * 10) if status and text.endswith("...") else 0  # "...": a hold
             label.set_label(f"{side[0]}  {text}")
-            label.set_css_classes(["segment", state])
+            label.set_css_classes(["segment", state, f"fill-{fill}"])

@@ -33,7 +33,7 @@ In head mode, pinch, right click and the other gestures still work with the hand
 
 ## HUD
 
-A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors, or your GTK theme's elsewhere. Clicks pass through it.
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it.
 
 | Label | Meaning |
 | ----- | ------- |
@@ -44,7 +44,7 @@ A HUD in the top-right corner shows what each hand is doing, in your Omarchy the
 | `Right click` · `Copy` · `Paste` · `Close` | The action just sent |
 | `Scrolling` · `Zooming` | Two open palms |
 | `Slider` · `Volume` · `Brightness` | Palm plus pinch |
-| `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time |
+| `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time; the segment fills as it does |
 | `At edge` | The hand is outside the mapped region |
 | `Paused` · `Head` | Paused, or in head mode |
 | `-` | A pose that does nothing |
@@ -95,7 +95,14 @@ Started without a terminal (from the app launcher, where it is listed as *inputl
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
-Flags are not saved; keep your values in a shell alias, e.g. `alias inputland='inputland --region 0.3 0.25 0.7 0.65'`, or in your keybinding.
+To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, except a `true`, which only the file can undo:
+
+```toml
+region = [0.3, 0.25, 0.7, 0.65]
+beta = 12.0
+hud-corner = "top-left"
+no-hud = true
+```
 
 With several monitors the region maps onto the whole screen layout, so the same hand movement covers all of them and each monitor gets less precision.
 

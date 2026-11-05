@@ -50,10 +50,11 @@ def test_debounce_needs_consecutive_frames():
 
 def test_debounce_reports_a_hold_building_up_from_its_nth_frame_until_it_turns_on():
     d = Debounce(on_frames=4, off_frames=2)
-    steps = [(d.update(True), d.pending(2)) for _ in range(4)]
-    assert steps == [(False, False), (False, True), (False, True), (True, False)]
+    steps = [(d.update(True), d.pending(2), d.progress()) for _ in range(4)]
+    assert steps == [(False, False, 0.25), (False, True, 0.5), (False, True, 0.75), (True, False, 0.0)]
     d.update(False)
     assert not d.pending(1)
+    assert d.progress() == 0.0
 
 
 def test_is_gesture_checks_label_and_score():
