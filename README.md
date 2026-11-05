@@ -134,6 +134,8 @@ One loop, one direction: **camera → tracking → gesture → mapping/filter �
 | `pointer.py` | uinput absolute pointer (evdev), plus the copy/paste, volume and brightness keys and closing the window |
 | `app.py` | Main loop wiring the above, what the HUD says (`describe`), calibration preview |
 | `hud.py` | GTK4 layer-shell overlay; GTK owns the main thread, the loop runs in a worker thread and sends `Status` updates via `GLib.idle_add` |
+| `styles.py` | The drawn HUD styles (Cyberpunk, Sticker, Terminal): Cairo, no GTK |
+| `settings.py` | The settings window (GTK), built from the CLI flags |
 | `cli.py` | Argument parsing, logging, exit codes |
 
 New gestures go in `gestures.py`; new outputs (clicks, keys, `hyprctl`) go next to `pointer.py`.

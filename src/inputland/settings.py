@@ -138,7 +138,8 @@ class _Window:
         self._show_preview()
         self._inputs["hud_style"][0].connect("notify::selected", lambda *_: self._show_preview())
 
-        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], hexpand=True)  # empty, not hidden: it keeps Start at the right
+        # empty, not hidden: it keeps Start at the right
+        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], hexpand=True)
         reset = Gtk.Button(label="Reset to defaults")
         reset.connect("clicked", lambda _: self._reset())
         start = Gtk.Button(label="Start", css_classes=["suggested-action"])
