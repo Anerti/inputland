@@ -1,7 +1,7 @@
 import pytest
 
 from inputland import styles
-from inputland.app import BANNERS, IDLE, TEXTS, Status
+from inputland.app import BANNERS, TEXTS, Status
 
 cairo = pytest.importorskip("cairo")
 
@@ -46,13 +46,16 @@ def test_the_accent_marks_only_the_hand_that_moves(style):
 @pytest.mark.parametrize("style", DRAWN)
 def test_every_text_fits_its_box(style):
     for text in TEXTS:
-        if text == IDLE:  # only ever the banner: both hands say it together
-            continue
         assert styles.text_width(style, f"L  {text}") <= styles.room(style, banner=False), text
     for text in BANNERS:
-        assert styles.text_width(style, text) <= styles.room(style, banner=True), text
+        assert styles.text_width(style, text, banner=True) <= styles.room(style, banner=True), text
 
 
 def test_default_is_not_drawn():
     with pytest.raises(ValueError):
         styles.draw(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 10, 10)), "default", None, COLORS)
+
+
+@pytest.mark.parametrize("style", DRAWN)
+def test_a_hand_can_say_point_to_start_beside_the_other_moving(style):
+    assert any(render(style, Status("Right", (), owner="Right")))  # the driver lingers after the hands leave

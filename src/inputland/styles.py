@@ -49,12 +49,23 @@ def _width(ctx: cairo.Context, text: str, spacing: float) -> float:
     return ctx.text_extents(text).x_advance + spacing * len(text)
 
 
-def text_width(style: str, text: str) -> float:
+def _fit(style: str, text: str, banner: bool) -> float:
+    """Font size for `text` (as drawn, bold): the style's size, shrunk until it fits `room`."""
+    size, shown = SIZE[style], _shown(style, text)
+    while size > 6:
+        _font(_scratch, style, bold=True, size=size)  # bold is the widest the font gets
+        if _width(_scratch, shown, SPACING[style]) <= room(style, banner):
+            break
+        size -= 0.5
+    return size
+
+
+def text_width(style: str, text: str, banner: bool = False) -> float:
     """Width `text` takes as `style` draws it (font, letter spacing, case); Cyberpunk and Terminal draw the hand
     letter outside the text, so a leading `L  ` is not counted there."""
     if style in ("cyberpunk", "terminal") and text.startswith(("L  ", "R  ")):
         text = text[3:]
-    _font(_scratch, style, bold=True)  # bold is the widest the font gets
+    _font(_scratch, style, bold=True, size=_fit(style, text, banner))
     return _width(_scratch, _shown(style, text), SPACING[style])
 
 
@@ -118,7 +129,7 @@ def _cyberpunk(ctx: cairo.Context, x: float, w: float, label: str, text: str, st
     else:
         _rgba(ctx, c.bg if state == "owner" else ink_c, 1 if state == "owner" else ink)
     _text(ctx, x + 6, 10, label, 1.5)
-    _font(ctx, "cyberpunk", bold=True)
+    _font(ctx, "cyberpunk", bold=True, size=_fit("cyberpunk", text, w == BANNER_W))
     _rgba(ctx, ink_c, ink)
     _text(ctx, x + 12, 42, _shown("cyberpunk", text), SPACING["cyberpunk"])
     lit = 10 if state == "driving" else round(p * 10)
@@ -159,9 +170,10 @@ def _sticker(ctx: cairo.Context, x: float, w: float, label: str, text: str, stat
         ctx.arc(px + 18, py + h / 2, 4, 0, 2 * math.pi)
         _rgba(ctx, c.fg)
         ctx.fill()
-    _font(ctx, "sticker", bold=True)
+    shown = f"{label}  {text}" if label else text
+    _font(ctx, "sticker", bold=True, size=_fit("sticker", shown, w == BANNER_W))
     _rgba(ctx, c.on_active if state == "driving" else c.fg, 0.4 if dim else 1)
-    _text(ctx, px + 25, py + 24, f"{label}  {text}" if label else text)
+    _text(ctx, px + 25, py + 24, shown)
 
 
 def _terminal(ctx: cairo.Context, x: float, w: float, label: str, text: str, state: str, p: float, c: Colors) -> None:
@@ -196,7 +208,7 @@ def _terminal(ctx: cairo.Context, x: float, w: float, label: str, text: str, sta
         _font(ctx, "terminal", bold=True)
         _rgba(ctx, c.on_active if state == "driving" else c.fg if dim else c.bg, 0.5 if dim else 1)
         _text(ctx, x + 14 - ctx.text_extents(label).x_advance / 2, ym + 4.5, label)
-    _font(ctx, "terminal", bold=state == "driving")
+    _font(ctx, "terminal", bold=state == "driving", size=_fit("terminal", text, w == BANNER_W))
     _rgba(ctx, c.fg, 0.45 if dim else 1)
     _text(ctx, x + (LEFT if label else LEFT_BANNER)["terminal"], ym + 4.5, _shown("terminal", text))
 
