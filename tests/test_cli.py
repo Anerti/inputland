@@ -79,3 +79,32 @@ def test_hud_style_reaches_the_hud(config, monkeypatch):
     cli.main()
 
     assert made == [("top-left", "sticker")]
+
+
+def test_save_config_writes_only_what_differs_and_reads_back(tmp_path):
+    path = tmp_path / "config.toml"
+    values = vars(cli.build_parser(path).parse_args([])) | {
+        "beta": 12.0, "region": [0.3, 0.25, 0.7, 0.65], "hud": False, "hud_corner": "top-left", "preview": True,
+    }
+    cli.save_config(cli.build_parser(path), values, path)
+
+    assert path.read_text().splitlines() == [
+        "region = [0.3, 0.25, 0.7, 0.65]", "beta = 12.0", "no-hud = true", 'hud-corner = "top-left"',
+    ]  # order: the parser's
+    parser = cli.build_parser(path)
+    cli.load_config(parser, path)
+    assert vars(parser.parse_args([])) == values | {"preview": False}
+
+
+def test_save_config_creates_the_directory_and_replaces_atomically(tmp_path):
+    path = tmp_path / "inputland/config.toml"
+    cli.save_config(cli.build_parser(path), {"beta": 20.0}, path)
+    cli.save_config(cli.build_parser(path), {"beta": 10.0}, path)  # back to the default
+    assert path.read_text() == ""
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_settings_from_refuses_invalid_values(tmp_path):
+    args = cli.build_parser(tmp_path / "c.toml").parse_args(["--region", "0.7", "0.2", "0.3", "0.6"])
+    with pytest.raises(ValueError, match="invalid region"):
+        cli.settings_from(args)

@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import html
+import json
 import logging
 import os
 import subprocess
@@ -13,9 +14,8 @@ from inputland.config import Region, Settings
 from inputland.styles import STYLES
 
 
-def main() -> None:
+def build_parser(config: Path) -> argparse.ArgumentParser:
     defaults = Settings()
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "inputland/config.toml"
     parser = argparse.ArgumentParser(
         description=f"Control the mouse with hand gestures. Flags can also be set in {config}.",
     )
@@ -62,9 +62,9 @@ def main() -> None:
         "--head-range", type=float, default=defaults.head_range,
         help="nose travel (fraction of the frame) that crosses the screen in head mode (index finger on the forehead)",
     )
-    parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
-        "--hud", dest="no_hud", action="store_false", help="show the overlay, even if the config file sets no-hud",
+        "--hud", action=argparse.BooleanOptionalAction, default=True,
+        help="show the on-screen overlay (--no-hud hides it, --hud undoes a no-hud in the config file)",
     )
     parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
@@ -74,6 +74,61 @@ def main() -> None:
         "--hud-style", choices=STYLES, default="default", help="look of the overlay; colors always follow the theme",
     )
     parser.add_argument("-v", "--verbose", action=argparse.BooleanOptionalAction, default=False, help="debug logging")
+    parser.add_argument(
+        "--settings", action="store_true", help="open the settings window first (what the app launcher does)",
+    )
+    return parser
+
+
+def settings_from(args: argparse.Namespace) -> Settings:
+    defaults = Settings()
+    return Settings(
+        camera=args.camera,
+        region=Region(*args.region) if args.region else defaults.region,
+        min_cutoff=args.min_cutoff,
+        beta=args.beta,
+        pinch_ratio=args.pinch_ratio,
+        scroll_speed=args.scroll_speed,
+        scroll_dead_zone=args.scroll_dead_zone,
+        zoom_speed=args.zoom_speed,
+        zoom_dead_zone=args.zoom_dead_zone,
+        swipe_distance=args.swipe_distance,
+        slider_step=args.slider_step,
+        head_range=args.head_range,
+        preview=args.preview,
+    )
+
+
+def save_config(parser: argparse.ArgumentParser, values: dict[str, object], path: Path) -> None:
+    """Write the `values` (by dest) that differ from the parser's defaults as `load_config` reads them back."""
+    lines = []
+    for action in parser._actions:  # no public way to walk the flags
+        if action.dest in ("help", "settings", "preview") or action.dest not in values:
+            continue
+        value = values[action.dest]
+        if value == action.default:
+            continue
+        key = next(s for s in action.option_strings if s.startswith("--"))[2:]
+        if isinstance(action, argparse.BooleanOptionalAction) and value is False:
+            key, text = f"no-{key}", "true"
+        elif isinstance(value, bool):
+            text = "true"
+        elif isinstance(value, str):
+            text = json.dumps(value)
+        elif isinstance(value, (list, tuple)):
+            text = "[" + ", ".join(map(repr, value)) + "]"
+        else:
+            text = repr(value)
+        lines.append(f"{key} = {text}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    part.write_text("".join(f"{line}\n" for line in lines))
+    os.replace(part, path)
+
+
+def main() -> None:
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "inputland/config.toml"
+    parser = build_parser(config)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
     unseen = display and not (sys.stderr and sys.stderr.isatty())  # from a keybinding or launcher: nobody sees the log
@@ -84,22 +139,8 @@ def main() -> None:
         args = parser.parse_args()
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
-        settings = Settings(
-            camera=args.camera,
-            region=Region(*args.region) if args.region else defaults.region,
-            min_cutoff=args.min_cutoff,
-            beta=args.beta,
-            pinch_ratio=args.pinch_ratio,
-            scroll_speed=args.scroll_speed,
-            scroll_dead_zone=args.scroll_dead_zone,
-            zoom_speed=args.zoom_speed,
-            zoom_dead_zone=args.zoom_dead_zone,
-            swipe_distance=args.swipe_distance,
-            slider_step=args.slider_step,
-            head_range=args.head_range,
-            preview=args.preview,
-        )
-        if args.no_hud or args.preview:
+        settings = settings_from(args)
+        if not args.hud or args.preview:
             run(settings)
         elif not display:
             logging.info("no display (TTY?): running without the HUD")
