@@ -31,12 +31,14 @@ STARTING = "Starting"
 IDLE = "Point to start"
 ABSENT = "Not seen"
 IGNORED = "-"
+READY = "Ready"
 HEAD = "Head"
 TEXTS = (
-    STARTING, IDLE, ABSENT, IGNORED, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste", "Close",
-    "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
+    STARTING, IDLE, ABSENT, IGNORED, READY, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste",
+    "Close", "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
     "Paused", "Quit...", HEAD,
 )
+BANNERS = (STARTING, IDLE, "Paused", "Quit...")
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,7 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
     if status.quitting:
         return "Quit...", "seen"
     if status.paused:
-        return "Paused", "absent"
+        return "Paused", "paused"
     if status.action and side == status.action[0]:
         return status.action[1], "driving"
     if status.adjusting:
@@ -90,9 +92,17 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return "At edge" if status.edge else "Moving", "driving"
     elif (gesture := dict(status.hands).get(side)) is None:
         text, state = ABSENT if status.hands else IDLE, "absent"
+    elif gesture == "Pointing_Up":
+        text, state = "Pointing", "seen"
     else:
-        text, state = ("Pointing", "seen") if gesture == "Pointing_Up" else (IGNORED, "absent")
+        text, state = READY if side == status.owner else IGNORED, "absent"
     return text, "owner" if side == status.owner else state
+
+
+def banner(status: Status | None) -> tuple[str, str] | None:
+    """What the HUD shows once for both hands (starting, none in view, paused, quitting), and its CSS state."""
+    shown = describe(SIDES[0], status)
+    return shown if shown[0] in BANNERS and describe(SIDES[1], status) == shown else None
 
 
 def run(
@@ -150,7 +160,7 @@ def run(
         head_anchor = (0.5, 0.5)
         face: Face | None = None
         swipe: deque[tuple[int, float]] = deque()
-        swipe_from = pause_from = 0
+        swipe_from = pause_from = owner_until = 0
         last_frame = time.monotonic()
 
         for n, frame in enumerate(camera.frames()):
@@ -192,7 +202,7 @@ def run(
                 head_anchor = face[NOSE_TIP]
                 for f in (smooth_x, smooth_y, head_x, head_y):
                     f.reset()
-            if not hands and not palms.state:
+            if (not hands and not palms.state) or n >= owner_until:
                 last_driver = None
             hand = pick_pointer_hand(hands, driver or last_driver, settings.min_gesture_score, settings.pinch_ratio)
 
@@ -301,6 +311,8 @@ def run(
                 swipe.clear()
                 swipe_from = n + settings.swipe_cooldown_frames
 
+            if driver or head or swipe or palms.state or any(d.state or d.pending(1) for d, _ in actions):
+                owner_until = n + settings.owner_frames  # a thumbs up long after pointing (a call) does nothing
             action = next((name for debounce, name in actions if debounce.state), None)
             hold = next(((d, name) for d, name in actions if d.pending(settings.engage_frames)), None)
             holding = (owner, hold[1]) if owner and hold else None
@@ -365,7 +377,8 @@ def _show_preview(frame: np.ndarray, hands: list[Hand], status: Status, settings
         cv2.circle(frame, (int(x * w), int(y * h)), 7, color, -1)
         for i, text in enumerate((f"{hand.side}: {hand.gesture} {hand.score:.2f}", f"pinch {pinch_ratio(hand):.2f}")):
             cv2.putText(frame, text, (int(x * w) + 10, int(y * h) + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    hud = "   ".join(f"{side[0]} {describe(side, status)[0]}" for side in SIDES)
+    shared = banner(status)
+    hud = shared[0] if shared else "   ".join(f"{side[0]} {describe(side, status)[0]}" for side in SIDES)
     cv2.putText(frame, hud, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     cv2.imshow(PREVIEW_WINDOW, frame)
     return cv2.waitKey(1) & 0xFF not in (ord("q"), 27)

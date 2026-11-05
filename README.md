@@ -26,7 +26,7 @@ Point with either index finger and the cursor follows the base of that finger, s
 | <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm. **Both fists** held about 2 seconds: quit |
 | <img src="docs/gestures/forehead.jpg" width="180" alt="Index on forehead"> | **Index fingertip on your forehead** for half a second: steer the cursor with your head (nose tip, starting at the screen center); again to go back to your hand |
 
-Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, so a stray pose from the other hand does nothing.
+Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, and only within about 3 seconds of it pointing or gesturing, so a stray pose from the other hand, or a thumbs up on a video call, does nothing.
 Scroll and zoom: whichever starts first keeps the gesture until you close either hand. Volume and brightness: whichever direction steps first keeps it until you let go of the pinch. They tap the media keys, so your desktop's own bindings make the change and show it (Omarchy shows its OSD). A pinch that was already dragging stays a drag.
 Copy and paste use Ctrl+Insert and Shift+Insert because, unlike Ctrl+C, they do not interrupt a terminal; terminals usually paste the selected text (primary selection) on Shift+Insert.
 In head mode, pinch, right click and the other gestures still work with the hand, which must stay in the camera's view.
@@ -37,7 +37,7 @@ A HUD in the top-right corner shows what each hand is doing, in your Omarchy the
 
 | Label | Meaning |
 | ----- | ------- |
-| `Starting` · `Point to start` · `Not seen` | Loading, no hand in view, this hand out of view |
+| `Starting` · `Point to start` · `Not seen` | Loading, no hand in view (these two span the HUD), this hand out of view |
 | `Moving` | This hand moves the cursor (highlighted) |
 | `Pointing` | This hand points, but the other one has the cursor |
 | `Pinch` | The left button is held (click or drag) |
@@ -46,10 +46,11 @@ A HUD in the top-right corner shows what each hand is doing, in your Omarchy the
 | `Slider` · `Volume` · `Brightness` | Palm plus pinch |
 | `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time; the segment fills as it does |
 | `At edge` | The hand is outside the mapped region |
-| `Paused` · `Head` | Paused, or in head mode |
+| `Paused` · `Head` | Paused (tinted, across the HUD), or in head mode |
+| `Ready` | This hand's gestures count, in a pose that does nothing |
 | `-` | A pose that does nothing |
 
-When no hand moves the cursor, the one whose gestures count (the last to point) is underlined.
+When no hand moves the cursor, the one whose gestures count (the last to point) is underlined. A hand out of view or in a pose that does nothing is dimmed.
 
 ## Install
 
@@ -74,7 +75,7 @@ inputland --preview  # camera view with the HUD's text and pinch ratios; green b
 inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is skipped anyway
 ```
 
-Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error as a desktop notification. To start it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
+Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error, or a warning such as a missing GPU, as a desktop notification. Launching it again stops it, so the launcher entry or a keybinding toggles it (with the HUD; `--no-hud` runs stop with Ctrl+C or both fists). To toggle it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
 ### Calibration
 
@@ -95,7 +96,7 @@ Started without a terminal (from the app launcher, where it is listed as *inputl
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
-To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, except a `true`, which only the file can undo:
+To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, and `--hud`, `--no-preview` and `--no-verbose` undo a `true`:
 
 ```toml
 region = [0.3, 0.25, 0.7, 0.65]

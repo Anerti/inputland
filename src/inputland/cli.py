@@ -19,7 +19,10 @@ def main() -> None:
         description=f"Control the mouse with hand gestures. Flags can also be set in {config}.",
     )
     parser.add_argument("--camera", type=int, default=defaults.camera, help="camera index (/dev/videoN)")
-    parser.add_argument("--preview", action="store_true", help="show the camera view for calibration, replaces the HUD (q/Esc quits)")
+    parser.add_argument(
+        "--preview", action=argparse.BooleanOptionalAction, default=False,
+        help="show the camera view for calibration, replaces the HUD (q/Esc quits)",
+    )
     parser.add_argument(
         "--region", type=float, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
         help="part of the camera frame (0..1) mapped to the screen",
@@ -60,12 +63,18 @@ def main() -> None:
     )
     parser.add_argument("--no-hud", action="store_true", help="do not show the on-screen overlay")
     parser.add_argument(
+        "--hud", dest="no_hud", action="store_false", help="show the overlay, even if the config file sets no-hud",
+    )
+    parser.add_argument(
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
         help="screen corner of the overlay",
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-v", "--verbose", action=argparse.BooleanOptionalAction, default=False, help="debug logging")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
+    unseen = display and not (sys.stderr and sys.stderr.isatty())  # from a keybinding or launcher: nobody sees the log
+    if unseen:
+        logging.getLogger().addHandler(NotifyHandler())
     try:
         load_config(parser, config)
         args = parser.parse_args()
@@ -99,10 +108,22 @@ def main() -> None:
         pass
     except (OSError, RuntimeError, ValueError) as e:
         logging.error("%s", e)
-        if display and not (sys.stderr and sys.stderr.isatty()):  # from a keybinding or launcher: nobody sees the log
-            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-                subprocess.run(["notify-send", "--app-name=inputland", "inputland stopped", html.escape(str(e))], timeout=2)
+        if unseen:
+            notify("inputland stopped", str(e))
         sys.exit(1)
+
+
+def notify(summary: str, body: str) -> None:
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        subprocess.run(["notify-send", "--app-name=inputland", summary, html.escape(body)], timeout=2)
+
+
+class NotifyHandler(logging.Handler):
+    """Shows the log records marked `extra={"notify": True}` as desktop notifications."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if getattr(record, "notify", False):
+            notify("inputland", record.getMessage())
 
 
 def load_config(parser: argparse.ArgumentParser, path: Path) -> None:

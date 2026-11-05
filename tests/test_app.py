@@ -179,6 +179,42 @@ def test_status_reports_the_last_driver_as_owner_until_no_hand_is_seen(devices):
     assert [(s.driver, s.owner) for s in statuses] == [("Right", "Right"), (None, "Right"), (None, None)]
 
 
+def test_the_last_driver_owns_gestures_for_a_while_after_pointing_or_while_gesturing(devices):
+    o, rest = point("Right", 0.5, 0.45), hand("Right", 0.5, 0.45, gesture="None")
+    up, l = hand("Right", 0.5, 0.45, gesture="Thumb_Up"), love("Right", 0.5, 0.45)
+    devices.script = [[o], [rest], [rest], [up], [o], [up], [up], [up], [rest], [o], [l], [l], [l]]
+
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, close_frames=3, owner_frames=2), statuses.append)
+
+    assert [e for e in devices.events if isinstance(e, str)] == ["copy", "close"]
+    owners = [s.owner for s in statuses]
+    assert owners[:4] == ["Right", "Right", None, None]
+    assert None not in owners[4:]
+
+
+def test_head_mode_keeps_owning_gestures_while_the_hand_rests(devices):
+    touch, rest, p = point("Right", 0.5, 0.25), hand("Right", 0.3, 0.6, gesture="None"), pinch("Right", 0.3, 0.6)
+    devices.script = [[touch], [touch], *[[rest]] * 6, [p]]
+    devices.faces = [face(0.5, 0.3)] * len(devices.script)
+
+    app.run(Settings(head_touch_frames=2, engage_frames=1, release_frames=1, pinch_frames=1, owner_frames=4))
+
+    assert "down" in devices.events
+
+
+def test_swipes_in_a_row_keep_owning_gestures(devices):
+    def palm(x):
+        return [hand("Right", x, 0.45, gesture="Open_Palm")]
+
+    devices.script = [[point("Right", 0.5, 0.45)], *[palm(0.6), palm(0.3), palm(0.3), palm(0.6), palm(0.6)] * 3]
+
+    app.run(Settings(engage_frames=1, release_frames=1, swipe_frames=3, swipe_cooldown_frames=1, owner_frames=6))
+
+    swipes = [e for e in devices.events if isinstance(e, tuple) and e[0] == "workspace"]
+    assert swipes == [("workspace", 1), ("workspace", -1)] * 3
+
+
 def test_long_drag_with_a_loose_pinky_does_not_close_the_window(devices):
     devices.script = [[point("Right", 0.5, 0.45)]] + [[love("Right", 0.5, 0.45, pinch="left")]] * 5
 

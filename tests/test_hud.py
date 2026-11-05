@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from inputland.app import TEXTS, Status, describe
+from inputland.app import TEXTS, Status, banner, describe
 
 try:
     from inputland import hud
@@ -47,7 +47,7 @@ def test_hud_shows_actions_not_gestures(status, left, right):
 def test_hud_marks_the_hand_whose_gestures_count_unless_it_drives():
     idle = Status(None, (("Left", "Victory"), ("Right", "None")), owner="Right")
     assert describe("Left", idle) == ("-", "absent")
-    assert describe("Right", idle) == ("-", "owner")
+    assert describe("Right", idle) == ("Ready", "owner")
     assert describe("Right", Status(None, (("Left", "Victory"),), owner="Right")) == ("Not seen", "owner")
     head = Status("Right", (("Right", "Pointing_Up"),), head=True, owner="Right")
     assert describe("Right", head) == ("Head", "owner")
@@ -55,6 +55,22 @@ def test_hud_marks_the_hand_whose_gestures_count_unless_it_drives():
         "Close...", "owner",
     )
     assert describe("Right", Status("Right", (("Right", "Pointing_Up"),), owner="Right")) == ("Moving", "driving")
+
+
+@pytest.mark.parametrize(
+    ("status", "shown"),
+    [
+        (None, ("Starting", "absent")),
+        (Status(None, ()), ("Point to start", "absent")),
+        (Status(None, (), paused=True), ("Paused", "paused")),
+        (Status(None, (), paused=True, quitting=True), ("Quit...", "seen")),
+        (Status("Right", ()), None),
+        (Status(None, (), head=True), None),
+        (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), None),
+    ],
+)
+def test_hud_shows_what_concerns_both_hands_once(status, shown):
+    assert banner(status) == shown
 
 
 @pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")

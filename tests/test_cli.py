@@ -1,3 +1,4 @@
+import logging
 import sys
 from types import SimpleNamespace
 
@@ -30,6 +31,27 @@ def test_config_file_sets_flags_and_the_command_line_wins(config, monkeypatch):
     (settings,) = config.runs
     assert (settings.beta, settings.min_cutoff, settings.region) == (20, 0.5, Region(0.3, 0.25, 0.7, 0.65))
     assert settings.preview
+
+
+def test_command_line_undoes_a_true_from_the_config_file(config, monkeypatch):
+    config.path.write_text("preview = true\nno-hud = true\n")
+    monkeypatch.setattr(sys, "argv", ["inputland", "--no-preview", "--hud"])
+
+    cli.main()
+
+    (settings,) = config.runs
+    assert not settings.preview
+
+
+def test_only_log_records_marked_notify_reach_the_desktop(monkeypatch):
+    sent = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda argv, **kwargs: sent.append(argv))
+    handler = cli.NotifyHandler()  # not through a logger: another test's `main` leaves one on the root logger
+
+    handler.handle(logging.makeLogRecord({"msg": "GPU <unavailable>", "notify": True}))
+    handler.handle(logging.makeLogRecord({"msg": "not for the desktop"}))
+
+    assert sent == [["notify-send", "--app-name=inputland", "inputland", "GPU &lt;unavailable&gt;"]]
 
 
 @pytest.mark.parametrize("text", ['beta = "fast"', "speed = 3", "region = [0.3]", 'hud-corner = "middle"', "beta ="])

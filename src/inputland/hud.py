@@ -26,7 +26,7 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 from gi.repository import Gtk4LayerShell as LayerShell
 
-from inputland.app import SIDES, TEXTS, Status, describe
+from inputland.app import SIDES, TEXTS, Status, banner, describe
 
 log = logging.getLogger(__name__)
 
@@ -54,14 +54,15 @@ CSS = """
   color: @fg;
 }
 .segment { padding: 3px 8px; transition: background 150ms ease-out, color 150ms ease-out; }
-.segment.absent { color: alpha(@fg, 0.85); }
+.segment.absent { color: alpha(@fg, 0.7); }
+.segment.paused { background: alpha(@fg, 0.12); }
 .segment.owner { box-shadow: inset 0 -2px @fg; }
 .segment.driving { background: @active; color: @on_active; font-weight: bold; }
 """
 
 # A hold's progress fills its segment from the left: one class per tenth, as GTK CSS has no per-widget values.
 CSS += "".join(
-    f".segment.fill-{i} {{ background-image: linear-gradient(to right, alpha(@fg, 0.2) {i}0%, transparent {i}0%); }}\n"
+    f".segment.fill-{i} {{ background-image: linear-gradient(to right, alpha(@fg, 0.35) {i}0%, transparent {i}0%); }}\n"
     for i in range(1, 11)
 )
 
@@ -106,12 +107,13 @@ def theme_css() -> str:
 class Hud:
     def __init__(self, corner: str) -> None:
         self._corner = corner
-        self._app = Gtk.Application(application_id="dev.inputland.Hud", flags=Gio.ApplicationFlags.NON_UNIQUE)
+        self._app = Gtk.Application(application_id="dev.inputland.Hud")
 
     def run(self, worker: Worker) -> None:
         """Show the HUD and run `worker(publish, stop)` in a background thread.
 
-        Returns when the worker finishes or on Ctrl+C; re-raises the worker's error.
+        Returns when the worker finishes, on Ctrl+C or when inputland is launched again (GTK hands a second launch to
+        the running instance, so the launcher or a keybinding toggles it); re-raises the worker's error.
         """
         stop = threading.Event()
         errors: list[BaseException] = []
@@ -127,16 +129,23 @@ class Hud:
         thread = threading.Thread(target=target, name="vision")
 
         def on_activate(app: Gtk.Application) -> None:
+            if thread.ident is not None:  # started already: this is a second launch
+                app.quit()
+                return
             self._build(app)
             thread.start()
 
         self._app.connect("activate", on_activate)
         try:
-            self._app.run([])
+            code = self._app.run([])
         finally:
             stop.set()
             if thread.is_alive():
                 thread.join()
+        if thread.ident is None:  # never activated here: a second launch, or GTK could not start
+            if code:
+                raise RuntimeError("the HUD could not start (see the GLib message above); use --no-hud")
+            log.info("inputland was already running: stopped it")
         if errors:
             raise errors[0]
 
@@ -158,21 +167,34 @@ class Hud:
             LayerShell.set_margin(window, edge, 12)
         window.connect("realize", lambda w: w.get_surface().set_input_region(cairo.Region()))
 
-        hud = Gtk.Box(spacing=2, css_classes=["hud"])
+        self._hands = Gtk.Box(spacing=2)
         self._segments: dict[str, Gtk.Label] = {}
         for side in SIDES:
-            label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3)
-            hud.append(label)
+            label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3, css_classes=["segment"])  # padding sets width
+            self._hands.append(label)
             self._segments[side] = label
+        self._banner = Gtk.Label()
+        self._stack = Gtk.Stack(css_classes=["hud"])  # as wide as the segments, so the banner never resizes it
+        self._stack.add_child(self._hands)
+        self._stack.add_child(self._banner)
         self._render(None)
-        window.set_child(hud)
+        window.set_child(self._stack)
         window.present()
         if not LayerShell.is_supported():
-            log.warning("compositor has no layer-shell support; the HUD is a normal window")
+            log.warning("no layer-shell support in the compositor; the HUD is a normal window", extra={"notify": True})
 
     def _render(self, status: Status | None) -> None:
-        for side, label in self._segments.items():
-            text, state = describe(side, status)
-            fill = round(status.progress * 10) if status and text.endswith("...") else 0  # "...": a hold
-            label.set_label(f"{side[0]}  {text}")
-            label.set_css_classes(["segment", state, f"fill-{fill}"])
+        shared = banner(status)
+        self._stack.set_visible_child(self._banner if shared else self._hands)
+        if shared:
+            _show(self._banner, *shared, status)
+        else:
+            for side, label in self._segments.items():
+                text, state = describe(side, status)
+                _show(label, f"{side[0]}  {text}", state, status)
+
+
+def _show(label: Gtk.Label, text: str, state: str, status: Status | None) -> None:
+    fill = round(status.progress * 10) if status and text.endswith("...") else 0  # "...": a hold
+    label.set_label(text)
+    label.set_css_classes(["segment", state, f"fill-{fill}"])
