@@ -101,7 +101,8 @@ def _rgba(ctx: cairo.Context, color: RGB, alpha: float = 1.0) -> None:
 
 
 def _cyberpunk(ctx: cairo.Context, x: float, w: float, label: str, text: str, state: str, p: float, c: Colors) -> None:
-    ink, ink_c = INK[state], (c.active if state == "driving" else c.fg)
+    ink, ink_c = INK[state], c.fg
+    accent = c.active if state == "driving" else c.fg  # outline, tab
     body = [(x, 12), (x + w - 8, 12), (x + w, 20), (x + w, 66), (x + 8, 66), (x, 58)]
     _font(ctx, "cyberpunk", bold=False, size=8)
     tab_w = _width(ctx, label, 1.5) + 12
@@ -114,12 +115,15 @@ def _cyberpunk(ctx: cairo.Context, x: float, w: float, label: str, text: str, st
         _rgba(ctx, c.active if state == "driving" else c.fg, 0.14 if state == "driving" else 0.12)
         ctx.fill()
     _poly(ctx, body)
-    _rgba(ctx, ink_c, ink)
+    _rgba(ctx, accent, ink)
     ctx.set_line_width(1.5)
     ctx.stroke()
     solid = state in ("driving", "owner")
     _poly(ctx, tab)
-    _rgba(ctx, ink_c, ink)
+    _rgba(ctx, c.bg, 0.9)
+    ctx.fill()
+    _poly(ctx, tab)
+    _rgba(ctx, accent, ink)
     if solid:
         ctx.fill_preserve()
     ctx.set_line_width(1)
@@ -159,7 +163,7 @@ def _sticker(ctx: cairo.Context, x: float, w: float, label: str, text: str, stat
         _pill(ctx, px, py, pw, h)
         ctx.clip()
         ctx.rectangle(px, py, pw * p, h)
-        _rgba(ctx, c.active, 0.45)
+        _rgba(ctx, c.active, 0.25)
         ctx.fill()
         ctx.restore()
     _pill(ctx, px, py, pw, h)
@@ -196,7 +200,7 @@ def _terminal(ctx: cairo.Context, x: float, w: float, label: str, text: str, sta
         _poly(ctx, body)
         ctx.clip()
         ctx.rectangle(start, y0, (x + w - start) * p, y1 - y0)
-        _rgba(ctx, c.active, 0.4)
+        _rgba(ctx, c.active, 0.25)
         ctx.fill()
         ctx.restore()
     if label:

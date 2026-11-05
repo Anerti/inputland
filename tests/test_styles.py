@@ -47,8 +47,10 @@ def test_the_accent_marks_only_the_hand_that_moves(style):
 def test_every_text_fits_its_box(style):
     for text in TEXTS:
         assert styles.text_width(style, f"L  {text}") <= styles.room(style, banner=False), text
+        assert styles._fit(style, f"L  {text}" if style == "sticker" else text, False) >= 10, text
     for text in BANNERS:
         assert styles.text_width(style, text, banner=True) <= styles.room(style, banner=True), text
+        assert styles._fit(style, text, True) >= 10, text
 
 
 def test_default_is_not_drawn():
