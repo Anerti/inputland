@@ -1,4 +1,4 @@
-"""Settings window (GTK4): every CLI flag with its current value, built from the argparse parser.
+"""Settings window (GTK4): every CLI flag with its current value, in three tabs (Look, Feel, Camera).
 
 `ask` only shows the window and returns the edited values; saving and starting is the caller's job.
 """
@@ -7,8 +7,12 @@ import argparse
 import dataclasses
 import logging
 import math
+import re
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
+import cairo
 import gi
 
 gi.require_version("Gdk", "4.0")
@@ -21,9 +25,12 @@ from inputland.config import Settings
 
 log = logging.getLogger(__name__)
 
-GROUPS = {
-    "camera": "Camera",
-    "region": "Camera",
+TABS = {"Look": ("HUD",), "Feel": ("Cursor", "Scroll and zoom", "Gestures"), "Camera": ("Camera",)}
+
+GROUPS = {  # dest -> heading, in the window's order
+    "hud": "HUD",
+    "hud_corner": "HUD",
+    "hud_style": "HUD",
     "min_cutoff": "Cursor",
     "beta": "Cursor",
     "pinch_ratio": "Cursor",
@@ -34,18 +41,103 @@ GROUPS = {
     "swipe_distance": "Gestures",
     "slider_step": "Gestures",
     "head_range": "Gestures",
-    "hud": "Display",
-    "hud_corner": "Display",
-    "hud_style": "Display",
-    "preview": "Display",
-    "verbose": "Display",
+    "camera": "Camera",
+    "region": "Camera",
+    "preview": "Camera",
+    "verbose": "Camera",
 }
+
+
+@dataclass(frozen=True)
+class Field:
+    title: str
+    hint: str
+    ends: tuple[str, str] = ("", "")  # a slider's words at its low and high end
+    span: tuple[float, float] = (0, 1)  # a slider's range (inside what Settings accepts), widened to fit any value
+
+
+FIELDS = {
+    "hud": Field("Show the HUD", "the overlay that shows what each hand does"),
+    "hud_corner": Field("Corner", "where the HUD sits on the screen"),
+    "hud_style": Field("Style", "its colors always follow the theme"),
+    "min_cutoff": Field("Smoothing", "how much the cursor is steadied while the hand is still", ("Steady", "Snappy"),
+                        (0.05, 5)),
+    "beta": Field("Fast moves", "how quickly the cursor catches up when the hand moves fast", ("Smooth", "Quick"),
+                  (0, 50)),
+    "pinch_ratio": Field("Pinch", "how close thumb and index come to count as a pinch (click)", ("Tight", "Loose"),
+                         (0.1, 0.9)),
+    "scroll_speed": Field("Scroll speed", "two open palms moved up or down", ("Slow", "Fast"), (5, 300)),
+    "scroll_dead_zone": Field("Scroll start", "how far the palms move before scrolling starts",
+                              ("Right away", "Bigger move"), (0, 0.2)),
+    "zoom_speed": Field("Zoom speed", "two open palms spread apart or together", ("Slow", "Fast"), (1, 50)),
+    "zoom_dead_zone": Field("Zoom start", "how far the palms spread before zooming starts",
+                            ("Right away", "Bigger spread"), (0, 0.5)),
+    "swipe_distance": Field("Workspace swipe", "how far one open palm swipes sideways", ("Short", "Long"),
+                            (0.05, 0.6)),
+    "slider_step": Field("Volume and brightness", "travel of the pinching hand per step, the other palm open",
+                         ("Fine steps", "Big steps"), (0.003, 0.06)),
+    "head_range": Field("Head pointing", "how far the nose moves to cross the screen (index on the forehead)",
+                        ("Small moves", "Big moves"), (0.03, 0.5)),
+    "camera": Field("Device", "the webcam that watches your hands"),
+    "region": Field("Tracking area", "your hand moving inside this box covers the whole screen: drag it or its "
+                                     "corners; a smaller box needs less arm travel"),
+    "preview": Field("Calibrate with the camera view", "shows the camera view instead of the HUD, this run only"),
+    "verbose": Field("Debug logging", "more detail in the log"),
+}
+
+INLINE = {"hud", "hud_corner", "camera", "preview", "verbose"}  # input to the right of the text, not below it
 
 PREVIEW_STATUS = Status("Left", (("Left", "Pointing_Up"), ("Right", "None")), owner="Left")
 
-MAX_VALUE = 1000  # Settings validation catches nonsense; its message shows in the window
+MIN_REGION = 0.1  # smallest tracking-area side, fraction of the frame
+
+CSS = """
+window.inputland-settings { background: @bg; color: @fg; }
+.inputland-settings label.title { font-weight: 800; font-size: 18px; }
+.inputland-settings .dim { color: alpha(@fg, 0.55); font-size: 12px; }
+.inputland-settings .section { color: @accent; font-size: 11px; font-weight: bold; letter-spacing: 1px;
+  margin: 16px 2px 6px; }
+.inputland-settings .card { background: mix(@bg, @fg, 0.045); border: 1px solid mix(@bg, @fg, 0.09);
+  border-radius: 12px; padding: 2px 14px; }
+.inputland-settings .card > separator { background: mix(@bg, @fg, 0.08); min-height: 1px; }
+.inputland-settings .item { padding: 10px 0; }
+.inputland-settings stackswitcher { background: mix(@bg, @fg, 0.045); border-radius: 10px; padding: 3px; }
+.inputland-settings stackswitcher button { background: none; border: none; box-shadow: none; border-radius: 8px;
+  color: alpha(@fg, 0.6); font-weight: 600; padding: 5px 0; }
+.inputland-settings stackswitcher button:checked { background: mix(@bg, @fg, 0.14); color: @fg; }
+.inputland-settings button { background: mix(@bg, @fg, 0.08); color: @fg; border: none; box-shadow: none;
+  border-radius: 8px; }
+.inputland-settings button:hover { background: mix(@bg, @fg, 0.14); }
+.inputland-settings button.flat { background: none; color: alpha(@fg, 0.65); }
+.inputland-settings button.flat:hover { color: @fg; }
+.inputland-settings button.suggested-action { background: @accent; color: @on_accent; font-weight: bold;
+  padding: 7px 30px; }
+.inputland-settings button.suggested-action:hover { background: mix(@accent, @fg, 0.15); }
+.inputland-settings switch { background: mix(@bg, @fg, 0.16); border: none; box-shadow: none; }
+.inputland-settings switch:checked { background: @accent; }
+.inputland-settings switch slider { background: @fg; border: none; box-shadow: none; }
+.inputland-settings switch:checked slider { background: @on_accent; }
+.inputland-settings scale trough { background: mix(@bg, @fg, 0.16); border: none; min-height: 6px;
+  border-radius: 3px; }
+.inputland-settings scale highlight { background: @accent; border: none; border-radius: 3px; margin: 0;
+  min-height: 6px; }
+.inputland-settings scale slider { background: @fg; border: none; box-shadow: 0 1px 3px alpha(black, 0.4); }
+.inputland-settings button.style-card { background: @bg; border: 1px solid mix(@bg, @fg, 0.12);
+  border-radius: 10px; padding: 8px; }
+.inputland-settings button.style-card:checked { border: 2px solid @accent; padding: 7px; }
+.inputland-settings .screen { border: 2px solid alpha(@fg, 0.4); border-radius: 6px; padding: 4px; }
+.inputland-settings button.corner { min-width: 18px; min-height: 10px; padding: 0; border-radius: 2px;
+  background: alpha(@fg, 0.2); }
+.inputland-settings button.corner:checked { background: @accent; }
+.inputland-settings popover > contents { background: mix(@bg, @fg, 0.07); color: @fg; }
+.inputland-settings spinbutton { background: mix(@bg, @fg, 0.07); color: @fg; border: none; box-shadow: none;
+  border-radius: 7px; }
+.inputland-settings *:focus-visible { outline-color: alpha(@accent, 0.8); }
+.inputland-settings .error { color: mix(#e01b24, @fg, 0.3); }
+"""
 
 Input = tuple[Gtk.Widget, Callable[[], object], Callable[[object], None]]  # widget, getter, setter
+Box4 = tuple[float, float, float, float]  # left, top, right, bottom
 
 
 def form_fields(parser: argparse.ArgumentParser) -> list[tuple[str, argparse.Action]]:
@@ -54,47 +146,64 @@ def form_fields(parser: argparse.ArgumentParser) -> list[tuple[str, argparse.Act
     return [(heading, actions[dest]) for dest, heading in GROUPS.items()]
 
 
-def label_for(action: argparse.Action) -> str:
-    option = next(o for o in action.option_strings if o.startswith("--"))
-    return option[2:].replace("-", " ").capitalize().replace("Hud", "HUD")
+def field_in_error(message: str) -> str | None:
+    """The setting a `Settings` / `Region` error is about: their messages name the field."""
+    return next((dest for dest in GROUPS if re.search(rf"\b{dest}\b", message)), None)
 
 
-def spin(value: float, digits: int, step: float, upper: float = MAX_VALUE) -> Gtk.SpinButton:
-    return Gtk.SpinButton(adjustment=Gtk.Adjustment(value=value, lower=0, upper=upper, step_increment=step,
-                                                    page_increment=step * 10), digits=digits)
+def cameras(root: Path = Path("/sys/class/video4linux")) -> dict[int, str]:
+    """Capture devices by number (/dev/videoN) and name; a webcam's extra metadata node (index > 0) is left out."""
+    found = {}
+    for node in root.glob("video*"):
+        try:
+            if (node / "index").read_text().strip() == "0":  # "HP Camera: HP Ca" (UVC repeats it, cut): keep the first
+                found[int(node.name.removeprefix("video"))] = (node / "name").read_text().strip().split(": ")[0]
+        except (OSError, ValueError):
+            continue
+    return dict(sorted(found.items()))
 
 
-def number_input(action: argparse.Action, value: object) -> Input:
-    if action.type is int:
-        widget = spin(float(value), 0, 1)
-        return widget, widget.get_value_as_int, widget.set_value
-    default = action.default or 1
-    widget = spin(float(value), 3, 10 ** math.floor(math.log10(default)) / 10)
-    return widget, lambda: round(widget.get_value(), 3), widget.set_value
+def drag(box: Box4, grab: str, dx: float, dy: float) -> Box4:
+    """`box` after dragging `grab` ("move" or a corner like "top-left") by (dx, dy), in fractions of the frame:
+    it stays inside the frame and at least `MIN_REGION` wide and tall; values to 2 digits, as the window shows them."""
+    left, top, right, bottom = box
+    if grab == "move":
+        dx, dy = min(max(dx, -left), 1 - right), min(max(dy, -top), 1 - bottom)
+        left, top, right, bottom = left + dx, top + dy, right + dx, bottom + dy
+    if "left" in grab:
+        left = min(max(left + dx, 0), right - MIN_REGION)
+    if "right" in grab:
+        right = max(min(right + dx, 1), left + MIN_REGION)
+    if "top" in grab:
+        top = min(max(top + dy, 0), bottom - MIN_REGION)
+    if "bottom" in grab:
+        bottom = max(min(bottom + dy, 1), top + MIN_REGION)
+    return round(left, 2), round(top, 2), round(right, 2), round(bottom, 2)
 
 
-def region_input(value: object) -> Input:
-    spins = [spin(v, 2, 0.01, 1) for v in (value or dataclasses.astuple(Settings().region))]
-    box = Gtk.Box(spacing=6)
-    for s in spins:
-        box.append(s)
-
-    def get() -> list[float] | None:
-        got = [round(s.get_value(), 2) for s in spins]
-        return None if got == list(dataclasses.astuple(Settings().region)) else got
-
-    def set_(v: object) -> None:
-        for s, x in zip(spins, v or dataclasses.astuple(Settings().region)):
-            s.set_value(x)
-
-    return box, get, set_
+def _step(default: float) -> tuple[float, int]:
+    """Slider step (a tenth of the default's order of magnitude) and the digits it needs."""
+    step = 10 ** math.floor(math.log10(default or 1)) / 10
+    return step, max(0, -math.floor(math.log10(step) + 1e-9))
 
 
-def choice_input(action: argparse.Action, value: object) -> Input:
-    choices = list(action.choices)
-    names = [styles.NAMES[c] for c in choices] if action.dest == "hud_style" else choices
-    widget = Gtk.DropDown(model=Gtk.StringList.new(names), selected=choices.index(value))
-    return widget, lambda: choices[widget.get_selected()], lambda v: widget.set_selected(choices.index(v))
+def slider_input(action: argparse.Action, value: float, field: Field) -> Input:
+    step, digits = _step(action.default)
+    lower, upper = min(field.span[0], value), max(field.span[1], value)
+    scale = Gtk.Scale(adjustment=Gtk.Adjustment(value=value, lower=lower, upper=upper, step_increment=step,
+                                                page_increment=step * 10), draw_value=False, hexpand=True)
+    scale.set_round_digits(digits)
+    shown = Gtk.Label(css_classes=["dim"])
+    scale.connect("value-changed", lambda s: shown.set_label(f"{s.get_value():.{digits}f}"))
+    shown.set_label(f"{value:.{digits}f}")
+    ends = Gtk.Box()
+    ends.append(Gtk.Label(label=field.ends[0], xalign=0, hexpand=True, css_classes=["dim"]))
+    ends.append(shown)
+    ends.append(Gtk.Label(label=field.ends[1], xalign=1, hexpand=True, css_classes=["dim"]))
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    box.append(scale)
+    box.append(ends)
+    return box, lambda: round(scale.get_value(), digits), scale.set_value
 
 
 def switch_input(value: object) -> Input:
@@ -102,14 +211,150 @@ def switch_input(value: object) -> Input:
     return widget, widget.get_active, lambda v: widget.set_active(bool(v))
 
 
-def make_input(action: argparse.Action, value: object) -> Input:
-    if action.dest == "region":
-        return region_input(value)
-    if isinstance(action, argparse.BooleanOptionalAction):
-        return switch_input(value)
-    if action.choices:
-        return choice_input(action, value)
-    return number_input(action, value)
+def camera_input(value: int) -> Input:
+    found = cameras()
+    found.setdefault(value, f"Camera {value}")
+    numbers = sorted(found)
+    names = [f"{found[n]} (video{n})" if found[n] != f"Camera {n}" else found[n] for n in numbers]
+    widget = Gtk.DropDown(model=Gtk.StringList.new(names), selected=numbers.index(value), valign=Gtk.Align.CENTER)
+
+    def set_(v: object) -> None:
+        if v in numbers:
+            widget.set_selected(numbers.index(v))
+
+    return widget, lambda: numbers[widget.get_selected()], set_
+
+
+def corner_input(action: argparse.Action, value: str) -> Input:
+    """A small screen with a button in each corner."""
+    screen = Gtk.Grid(column_spacing=38, row_spacing=18, css_classes=["screen"], valign=Gtk.Align.CENTER)
+    buttons: dict[str, Gtk.ToggleButton] = {}
+    for corner in action.choices:
+        button = Gtk.ToggleButton(css_classes=["corner"], tooltip_text=corner.replace("-", " ").capitalize())
+        if buttons:
+            button.set_group(next(iter(buttons.values())))
+        screen.attach(button, int("right" in corner), int("bottom" in corner), 1, 1)
+        buttons[corner] = button
+    buttons[value].set_active(True)
+    return screen, lambda: next(c for c, b in buttons.items() if b.get_active()), lambda v: buttons[v].set_active(True)
+
+
+def style_input(action: argparse.Action, value: str, views: list[hud.HudView]) -> Input:
+    """One card per style, each showing the HUD drawn in it; `views` gets the previews, to redraw on a theme change."""
+    cards = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    buttons: dict[str, Gtk.ToggleButton] = {}
+    for style in action.choices:
+        view = hud.HudView(style)
+        view.render(PREVIEW_STATUS)
+        view.widget.set_halign(Gtk.Align.START)
+        views.append(view)
+        content = Gtk.Box(spacing=14)
+        content.append(view.widget)
+        content.append(Gtk.Label(label=styles.NAMES[style], xalign=0, hexpand=True))
+        button = Gtk.ToggleButton(child=content, css_classes=["style-card"])
+        if buttons:
+            button.set_group(next(iter(buttons.values())))
+        cards.append(button)
+        buttons[style] = button
+    buttons[value].set_active(True)
+    return cards, lambda: next(s for s, b in buttons.items() if b.get_active()), lambda v: buttons[v].set_active(True)
+
+
+def region_input(value: object) -> Input:
+    """A box over a frame standing for the camera view, dragged as a whole or by a corner; the four exact values
+    below it, for the keyboard. `None` means the default region, as in the parser."""
+    default = dataclasses.astuple(Settings().region)
+    spins = [Gtk.SpinButton(adjustment=Gtk.Adjustment(lower=0, upper=1, step_increment=0.01, page_increment=0.1),
+                            digits=2, width_chars=4) for _ in range(4)]
+    area = Gtk.DrawingArea(content_height=200, hexpand=True)
+    grabbed: list[object] = []  # [grab, box at the start of the drag]
+
+    def box() -> Box4:
+        return tuple(round(s.get_value(), 2) for s in spins)
+
+    def set_(v: object) -> None:
+        for spin, x in zip(spins, v or default):
+            spin.set_value(x)
+
+    def frame(w: int, h: int) -> tuple[float, float, float, float]:
+        fh = min(h, w * 3 / 4)  # a 4:3 camera frame, centered
+        return (w - fh * 4 / 3) / 2, (h - fh) / 2, fh * 4 / 3, fh
+
+    def draw(_: Gtk.DrawingArea, ctx: cairo.Context, w: int, h: int) -> None:
+        fx, fy, fw, fh = frame(w, h)
+        fg, accent = hud.theme_color(area, "fg"), hud.theme_color(area, "accent")
+        ctx.rectangle(fx, fy, fw, fh)
+        ctx.set_source_rgba(*fg, 0.06)
+        ctx.fill_preserve()
+        ctx.set_source_rgba(*fg, 0.18)
+        ctx.set_line_width(1)
+        ctx.stroke()
+        ctx.set_source_rgba(*fg, 0.4)
+        ctx.select_font_face("sans-serif")
+        ctx.set_font_size(11)
+        ctx.move_to(fx + 8, fy + fh - 8)
+        ctx.show_text("camera view (as in the calibration view)")
+        left, top, right, bottom = box()
+        x0, y0, x1, y1 = fx + left * fw, fy + top * fh, fx + right * fw, fy + bottom * fh
+        ctx.rectangle(x0, y0, x1 - x0, y1 - y0)
+        ctx.set_source_rgba(*accent, 0.14)
+        ctx.fill_preserve()
+        ctx.set_source_rgba(*accent, 1)
+        ctx.set_line_width(2)
+        ctx.stroke()
+        ctx.set_source_rgba(*fg, 1)
+        for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+            ctx.rectangle(cx - 4.5, cy - 4.5, 9, 9)
+        ctx.fill()
+
+    def grab_at(x: float, y: float) -> str | None:
+        fx, fy, fw, fh = frame(area.get_width(), area.get_height())
+        left, top, right, bottom = box()
+        for name, cx, cy in (("top-left", left, top), ("top-right", right, top),
+                             ("bottom-left", left, bottom), ("bottom-right", right, bottom)):
+            if abs(x - (fx + cx * fw)) <= 12 and abs(y - (fy + cy * fh)) <= 12:
+                return name
+        u, v = (x - fx) / fw, (y - fy) / fh
+        return "move" if left <= u <= right and top <= v <= bottom else None
+
+    def begin(_: Gtk.GestureDrag, x: float, y: float) -> None:
+        grabbed[:] = [grab_at(x, y), box()]
+
+    def update(_: Gtk.GestureDrag, dx: float, dy: float) -> None:
+        if grabbed and grabbed[0]:
+            _, _, fw, fh = frame(area.get_width(), area.get_height())
+            set_(drag(grabbed[1], grabbed[0], dx / fw, dy / fh))
+
+    def hover(_: Gtk.EventControllerMotion, x: float, y: float) -> None:
+        grab = grab_at(x, y)
+        cursors = {"move": "move", "top-left": "nwse-resize", "bottom-right": "nwse-resize"}
+        area.set_cursor_from_name(cursors.get(grab, "nesw-resize") if grab else None)
+
+    area.set_draw_func(draw)
+    gesture = Gtk.GestureDrag()
+    gesture.connect("drag-begin", begin)
+    gesture.connect("drag-update", update)
+    area.add_controller(gesture)
+    motion = Gtk.EventControllerMotion()
+    motion.connect("motion", hover)
+    area.add_controller(motion)
+    for spin in spins:
+        spin.connect("value-changed", lambda _: area.queue_draw())
+    set_(value)
+
+    exact = Gtk.Grid(column_spacing=8, row_spacing=6, halign=Gtk.Align.CENTER)
+    for i, (name, spin) in enumerate(zip(("Left", "Top", "Right", "Bottom"), spins)):
+        exact.attach(Gtk.Label(label=name, xalign=1, css_classes=["dim"]), 2 * (i % 2), i // 2, 1, 1)
+        exact.attach(spin, 2 * (i % 2) + 1, i // 2, 1, 1)
+    widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    widget.append(area)
+    widget.append(exact)
+
+    def get() -> list[float] | None:
+        got = list(box())
+        return None if got == list(default) else got
+
+    return widget, get, set_
 
 
 class _Window:
@@ -121,85 +366,123 @@ class _Window:
         self._values = values
         self.result: dict[str, object] | None = None
         self._inputs: dict[str, Input] = {}
+        self._errors: dict[str, Gtk.Label] = {}
+        self._views: list[hud.HudView] = []
 
-        self._theme = hud.install_theme(lambda: self._view.redraw())
-        self._preview = Gtk.Box()
+        self._theme = hud.install_theme(self._redraw)
+        css = Gtk.CssProvider()
+        css.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=12, margin_bottom=12,
-                       margin_start=18, margin_end=18)
-        group = None
-        for heading, action in form_fields(parser):
-            if heading != group:
-                group = heading
-                page.append(Gtk.Label(label=heading, xalign=0, css_classes=["heading"], margin_top=12))
-            page.append(self._row(action))
-            if action.dest == "hud_style":
-                page.append(self._preview)
-        self._show_preview()
-        self._inputs["hud_style"][0].connect("notify::selected", lambda *_: self._show_preview())
+        self._stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+        actions = dict((action.dest, action) for _, action in form_fields(parser))
+        for tab, headings in TABS.items():
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=18, margin_end=18, margin_bottom=18)
+            for heading in headings:
+                page.append(Gtk.Label(label=heading.upper(), xalign=0, css_classes=["section"]))
+                card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["card"])
+                for dest in (d for d, h in GROUPS.items() if h == heading):
+                    if card.get_first_child():
+                        card.append(Gtk.Separator())
+                    card.append(self._row(dest, actions[dest]))
+                page.append(card)
+            scroll = Gtk.ScrolledWindow(child=page, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            self._stack.add_titled(scroll, tab, tab)
 
-        # empty, not hidden: it keeps Start at the right
-        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], hexpand=True)
-        reset = Gtk.Button(label="Reset to defaults")
+        header = Gtk.Box(margin_top=16, margin_start=18, margin_end=18, margin_bottom=12)
+        header.append(Gtk.Label(label="inputland", xalign=0, hexpand=True, css_classes=["title"]))
+        header.append(Gtk.Label(label="settings", css_classes=["dim"]))
+        tabs = Gtk.StackSwitcher(stack=self._stack, margin_start=18, margin_end=18)
+
+        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], hexpand=True)  # empty keeps Start right
+        reset = Gtk.Button(label="Reset to defaults", css_classes=["flat"])
         reset.connect("clicked", lambda _: self._reset())
         start = Gtk.Button(label="Start", css_classes=["suggested-action"])
         start.connect("clicked", lambda _: self._start())
-        bar = Gtk.Box(spacing=12, margin_top=8, margin_bottom=8, margin_start=18, margin_end=18)
+        bar = Gtk.Box(spacing=12, margin_top=10, margin_bottom=12, margin_start=18, margin_end=18)
         bar.append(reset)
         bar.append(self._error)
         bar.append(start)
-        start.set_halign(Gtk.Align.END)
 
-        scroll = Gtk.ScrolledWindow(child=page, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        content.append(scroll)
-        content.append(bar)
+        for part in (header, tabs, self._stack, Gtk.Separator(), bar):
+            content.append(part)
 
-        self.window = Gtk.ApplicationWindow(application=app, title="inputland", default_width=560, default_height=720)
+        self.window = Gtk.ApplicationWindow(application=app, title="inputland", default_width=470, default_height=720)
+        self.window.add_css_class("inputland-settings")
         self.window.set_child(content)
         self.window.set_default_widget(start)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.window.add_controller(keys)
 
-    def _row(self, action: argparse.Action) -> Gtk.Widget:
-        widget, get, set_ = make_input(action, self._initial(action.dest, self._values[action.dest]))
-        self._inputs[action.dest] = (widget, get, set_)
-        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
-        text.append(Gtk.Label(label=label_for(action), xalign=0))
-        if action.help:
-            text.append(Gtk.Label(label=action.help, xalign=0, wrap=True, css_classes=["dim-label"]))
-        row = Gtk.Box(spacing=12)
+    def _row(self, dest: str, action: argparse.Action) -> Gtk.Widget:
+        field = FIELDS[dest]
+        widget, get, set_ = self._input(dest, action, self._initial(dest, self._values[dest]))
+        self._inputs[dest] = (widget, get, set_)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True, valign=Gtk.Align.CENTER)
+        text.append(Gtk.Label(label=field.title, xalign=0))
+        text.append(Gtk.Label(label=field.hint, xalign=0, wrap=True, css_classes=["dim"]))
+        error = Gtk.Label(xalign=0, wrap=True, css_classes=["error"], visible=False)  # under the text: in view
+        text.append(error)  # when Start scrolls to the row
+        self._errors[dest] = error
+        if dest in INLINE:
+            row = Gtk.Box(spacing=12, css_classes=["item"])
+        else:
+            row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["item"])
         row.append(text)
-        widget.set_valign(Gtk.Align.CENTER)
         row.append(widget)
         return row
+
+    def _input(self, dest: str, action: argparse.Action, value: object) -> Input:
+        if dest == "region":
+            return region_input(value)
+        if dest == "hud_style":
+            return style_input(action, value, self._views)
+        if dest == "hud_corner":
+            return corner_input(action, value)
+        if dest == "camera":
+            return camera_input(value)
+        if isinstance(action, argparse.BooleanOptionalAction):
+            return switch_input(value)
+        return slider_input(action, value, FIELDS[dest])
 
     @staticmethod
     def _initial(dest: str, value: object) -> object:
         """What an input shows when the window opens or resets: preview always starts off (it applies to one run)."""
         return False if dest == "preview" else value
 
-    def _show_preview(self) -> None:
-        child = self._preview.get_first_child()
-        if child:
-            self._preview.remove(child)
-        self._view = hud.HudView(self._inputs["hud_style"][1]())
-        self._view.render(PREVIEW_STATUS)
-        self._view.widget.set_halign(Gtk.Align.START)
-        self._preview.append(self._view.widget)
+    def _redraw(self) -> None:
+        for view in self._views:
+            view.redraw()
+        self._inputs["region"][0].get_first_child().queue_draw()
+
+    def _clear_errors(self) -> None:
+        self._error.set_label("")
+        for label in self._errors.values():
+            label.set_visible(False)
 
     def _reset(self) -> None:
         for dest, (_, _, set_) in self._inputs.items():
             set_(self._initial(dest, self._parser.get_default(dest)))
-        self._error.set_label("")
+        self._clear_errors()
 
     def _start(self) -> None:
         edited = {**self._values, **{dest: get() for dest, (_, get, _) in self._inputs.items()}}
+        self._clear_errors()
         try:
             cli.settings_from(argparse.Namespace(**edited))
         except ValueError as e:
-            self._error.set_label(str(e))
+            dest = field_in_error(str(e))
+            if dest is None:
+                self._error.set_label(str(e))
+                return
+            error = self._errors[dest]
+            error.set_label(str(e))
+            error.set_visible(True)
+            self._stack.set_visible_child_name(next(t for t, hs in TABS.items() if GROUPS[dest] in hs))
+            error.get_ancestor(Gtk.Viewport).scroll_to(error.get_parent().get_parent(), None)  # its row
             return
         self.result = edited
         self._app.quit()

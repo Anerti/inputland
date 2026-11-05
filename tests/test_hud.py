@@ -93,6 +93,17 @@ def test_hud_highlight_is_the_theme_accent_with_readable_text(tmp_path, monkeypa
 
 
 @pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+def test_settings_window_highlight_is_the_theme_accent_even_with_an_active_border(tmp_path, monkeypatch):
+    colors = tmp_path / "omarchy/current/theme/colors.toml"
+    colors.parent.mkdir(parents=True)
+    colors.write_text('accent = "#1e66f5"\nactive_border_color = "#d6d3de"')
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    css = hud.theme_css()
+    assert "@define-color accent #1e66f5;" in css
+    assert "@define-color on_accent #ffffff;" in css
+
+
+@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
 def test_hud_without_omarchy_follows_the_gtk_theme(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert hud.theme_css() == hud.GTK_THEME_CSS

@@ -46,6 +46,8 @@ GTK_THEME_CSS = (
     "@define-color fg @theme_fg_color;\n"
     "@define-color active @theme_selected_bg_color;\n"
     "@define-color on_active @theme_selected_fg_color;\n"
+    "@define-color accent @theme_selected_bg_color;\n"
+    "@define-color on_accent @theme_selected_fg_color;\n"
 )
 
 CSS = """
@@ -86,8 +88,9 @@ def watch_theme(on_change: Callable[[], None]) -> Gio.FileMonitor:
 def theme_css() -> str:
     """Color definitions from the current Omarchy theme, else from the GTK theme (any desktop).
 
-    The highlight is the theme's `active_border_color`, else its `accent` (every theme has one, few the former), with
-    black or white text, whichever contrasts more: they tie at luminance 0.179, so either reaches 4.5:1 (WCAG AA).
+    The HUD's highlight is the theme's `active_border_color`, else its `accent` (every theme has one, few the former);
+    the settings window's is the `accent`. Each comes with black or white text, whichever contrasts more: they tie at
+    luminance 0.179, so either reaches 4.5:1 (WCAG AA).
     """
     colors = dict(DEFAULT_COLORS)
     try:
@@ -97,15 +100,21 @@ def theme_css() -> str:
         return GTK_THEME_CSS
     colors.update({k: v for k, v in theme.items() if k in colors})
     active = theme.get("active_border_color", colors["accent"])
-    rgba = Gdk.RGBA()
-    rgba.parse(active)
-    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (rgba.red, rgba.green, rgba.blue))
     return (
         f"@define-color bg {colors['background']};\n"
         f"@define-color fg {colors['foreground']};\n"
         f"@define-color active {active};\n"
-        f"@define-color on_active {'#000000' if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 else '#ffffff'};\n"
+        f"@define-color on_active {_text_on(active)};\n"
+        f"@define-color accent {colors['accent']};\n"
+        f"@define-color on_accent {_text_on(colors['accent'])};\n"
     )
+
+
+def _text_on(color: str) -> str:
+    rgba = Gdk.RGBA()
+    rgba.parse(color)
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (rgba.red, rgba.green, rgba.blue))
+    return "#000000" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 else "#ffffff"
 
 
 def install_theme(on_change: Callable[[], None]) -> Gio.FileMonitor:
@@ -122,18 +131,18 @@ def install_theme(on_change: Callable[[], None]) -> Gio.FileMonitor:
     return watch_theme(reload)
 
 
+def theme_color(widget: Gtk.Widget, name: str) -> styles.RGB:
+    """One of the theme's `@define-color`s as a Cairo color."""
+    # shortcut: Gtk.StyleContext.lookup_color is deprecated since GTK 4.10, still in GTK 4; replace when moving to GTK 5
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        _, rgba = widget.get_style_context().lookup_color(name)
+    return rgba.red, rgba.green, rgba.blue
+
+
 def theme_colors(widget: Gtk.Widget) -> styles.Colors:
-    """The four `@define-color`s as Cairo colors."""
-    context = widget.get_style_context()
-    found = []
-    for name in ("bg", "fg", "active", "on_active"):
-        # shortcut: Gtk.StyleContext.lookup_color is deprecated since GTK 4.10, still in GTK 4;
-        # replace when moving to GTK 5
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            _, rgba = context.lookup_color(name)
-        found.append((rgba.red, rgba.green, rgba.blue))
-    return styles.Colors(*found)
+    """The HUD's four `@define-color`s as Cairo colors."""
+    return styles.Colors(*(theme_color(widget, name) for name in ("bg", "fg", "active", "on_active")))
 
 
 class HudView:
