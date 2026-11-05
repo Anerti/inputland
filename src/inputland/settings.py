@@ -543,20 +543,22 @@ class _Window:
         return False
 
 
+def show(
+    app: Gtk.Application, parser: argparse.ArgumentParser, values: dict[str, object], windows: list[_Window],
+) -> None:
+    """Show the settings window in `app` filled with `values`, or bring back the one still open; `windows` collects
+    them, for the `result` of the last. Start quits `app`."""
+    if not (windows and windows[-1].window.get_visible()):
+        windows.append(_Window(app, parser, values))
+    windows[-1].window.present()
+
+
 def ask(parser: argparse.ArgumentParser, values: dict[str, object]) -> dict[str, object] | None:
     """Show the settings window filled with `values`; the edited values after a valid Start, else None
     (closed, or another instance was running and has been stopped)."""
     app = Gtk.Application(application_id=hud.APP_ID)
     windows: list[_Window] = []
-
-    def on_activate(app: Gtk.Application) -> None:
-        if windows:  # inputland launched again while the window is open
-            windows[0].window.present()
-            return
-        windows.append(_Window(app, parser, values))
-        windows[0].window.present()
-
-    app.connect("activate", on_activate)
+    app.connect("activate", lambda app: show(app, parser, values, windows))  # again: inputland launched again
     code = app.run([])
     if not windows:  # never activated here: a second launch, or GTK could not start
         if code:
@@ -565,4 +567,4 @@ def ask(parser: argparse.ArgumentParser, values: dict[str, object]) -> dict[str,
             )
         log.info("inputland was already running: stopped it")
         return None
-    return windows[0].result
+    return windows[-1].result

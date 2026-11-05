@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from hands import face, hand, love, pinch, point
+from hands import face, hand, love, pinch, point, triangle
 
 from inputland import app
 from inputland.config import Settings
@@ -360,6 +360,25 @@ def test_both_fists_held_quit_even_while_paused(devices):
     assert len(devices.events) == 2  # frames 0 and 7: a brief pair or one fist held does not quit, the held pair does
     assert [s.quitting for s in statuses if s.paused] == [True, False, True]  # the HUD warns while it builds up
     assert [s.progress for s in statuses if s.quitting] == [0.5, 0.5]
+
+
+def test_a_triangle_held_opens_the_settings_once(devices):
+    o, held = point("Right", 0.5, 0.45), triangle(0.5, 0.4)
+    devices.script = [[o], held, [o], held, held, held, held, [o]]
+
+    opened, statuses = [], []
+    settings = Settings(engage_frames=1, release_frames=1, triangle_frames=3)
+    app.run(settings, statuses.append, None, lambda: opened.append(1))
+
+    assert opened == [1]  # a brief triangle does nothing, the held one opens the settings once
+    assert [s.progress for s in statuses if s.opening] == pytest.approx([1 / 3, 1 / 3, 2 / 3])  # the HUD fills
+
+
+def test_a_triangle_does_nothing_without_a_settings_window_to_open(devices):
+    devices.script = [triangle(0.5, 0.4)] * 4
+    statuses = []
+    app.run(Settings(engage_frames=1, release_frames=1, triangle_frames=3), statuses.append)
+    assert not any(s.opening for s in statuses)
 
 
 def test_a_palm_resumes_while_the_other_hand_is_already_open(devices):

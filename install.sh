@@ -67,7 +67,7 @@ install_layer_shell() {
     run "Installing gtk4-layer-shell" sudo pacman -S --needed --noconfirm gtk4-layer-shell
     ok "gtk4-layer-shell installed"
   else
-    warn "gtk4-layer-shell missing: install it from your distribution, or run with --no-hud"
+    warn "gtk4-layer-shell missing: install it from your distribution, or inputland runs without the HUD"
   fi
 }
 
@@ -100,13 +100,16 @@ install_desktop() {
   fi
   mkdir -p "$(dirname "$DESKTOP")"
   # systemd-run: Omarchy's menu has RLIMIT_RTTIME 0, which children inherit and the kernel SIGKILLs MediaPipe for.
+  # -E: the unit gets the user manager's environment, which not every session fills with the display.
+  local exec="\"$LAUNCHER\" --settings"
+  command -v systemd-run >/dev/null && exec="systemd-run --user --collect -E WAYLAND_DISPLAY -E DISPLAY $exec"
   cat >"$DESKTOP" <<EOF
 $LAUNCHER_MARK
 [Desktop Entry]
 Type=Application
 Name=inputland
 Comment=Control the mouse with hand gestures
-Exec=systemd-run --user --collect "$LAUNCHER" --settings
+Exec=$exec
 Icon=$ROOT/docs/logo.svg
 Terminal=false
 Categories=Utility;Accessibility;

@@ -1,5 +1,6 @@
 import logging
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +17,7 @@ def config(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     for name in ("WAYLAND_DISPLAY", "DISPLAY"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(cli, "run", fake.runs.append)
+    monkeypatch.setattr(cli, "run", lambda settings, *args, **kwargs: fake.runs.append(settings))
     return fake
 
 
@@ -128,7 +129,10 @@ def test_settings_from_refuses_invalid_values(tmp_path):
 def window(config, monkeypatch):
     """`--settings` with a fake window: `.answer` is what it returns; `.execs` the argv of each exec."""
     fake = SimpleNamespace(answer=None, execs=[])
-    monkeypatch.setitem(sys.modules, "inputland.settings", SimpleNamespace(ask=lambda parser, values: fake.answer))
+    monkeypatch.setitem(sys.modules, "inputland.settings", SimpleNamespace(
+        ask=lambda parser, values: fake.answer,
+        show=lambda app, parser, values, windows: windows.append(SimpleNamespace(result=fake.answer)),
+    ))
     monkeypatch.setattr(cli.os, "execv", lambda path, argv: fake.execs.append(argv))
     monkeypatch.setattr(sys, "argv", ["inputland", "--settings"])
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
@@ -147,6 +151,34 @@ def test_start_in_the_window_saves_and_restarts_without_the_window(config, windo
 def test_closing_the_window_saves_and_starts_nothing(config, window):
     cli.main()
     assert not config.path.exists() and window.execs == [] and config.runs == []
+
+
+@pytest.mark.parametrize("answer", [{"beta": 12.0}, None])
+def test_a_triangle_beside_the_hud_opens_the_settings_window_and_start_restarts(config, window, monkeypatch, answer):
+    hud = SimpleNamespace(open=lambda show: show("app"), run=lambda worker: worker(print, threading.Event()))
+    monkeypatch.setitem(sys.modules, "inputland.hud", SimpleNamespace(Hud=lambda corner, style: hud))
+    monkeypatch.setattr(cli, "run", lambda settings, on_status, stop, on_settings: on_settings())
+    monkeypatch.setattr(sys, "argv", ["inputland"])
+    if answer:
+        window.answer = vars(cli.build_parser(config.path).parse_args([])) | answer
+    cli.main()
+    assert window.execs == ([[sys.executable, "-P", "-m", "inputland"]] if answer else [])  # closed: it runs on
+    assert config.path.exists() == bool(answer)
+
+
+def test_a_triangle_without_the_hud_starts_over_in_the_settings_window(config, window, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["inputland", "--no-hud", "--beta", "12"])
+    monkeypatch.setattr(cli, "run", lambda settings, stop, on_settings: (on_settings(), stop.is_set()))
+    cli.main()
+    assert window.execs == [[sys.executable, "-P", "-m", "inputland", "--no-hud", "--beta", "12", "--settings"]]
+
+
+def test_a_triangle_on_the_tty_opens_nothing(config, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run", lambda settings, stop, on_settings: calls.append(on_settings))
+    monkeypatch.setattr(sys, "argv", ["inputland"])
+    cli.main()
+    assert calls == [None]
 
 
 def test_settings_without_a_display_says_so(config, window, monkeypatch, caplog):

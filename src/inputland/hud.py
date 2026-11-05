@@ -4,6 +4,7 @@ GTK owns the main thread; the vision loop runs in a worker thread and pushes
 `Status` updates through `GLib.idle_add`.
 """
 
+import contextlib
 import ctypes
 import logging
 import os
@@ -13,19 +14,21 @@ import warnings
 from collections.abc import Callable
 from pathlib import Path
 
-try:
-    ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)
-except OSError as e:
-    raise RuntimeError("gtk4-layer-shell not found: install it (pacman -S gtk4-layer-shell) or use --no-hud") from e
+with contextlib.suppress(OSError):  # missing: the HUD runs without its window, the settings window still works
+    ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)  # before GTK loads libwayland-client
 
 import cairo
 import gi
 
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
-gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
-from gi.repository import Gtk4LayerShell as LayerShell
+
+try:
+    gi.require_version("Gtk4LayerShell", "1.0")
+    from gi.repository import Gtk4LayerShell as LayerShell
+except (ValueError, ImportError):
+    LayerShell = None
 
 from inputland import styles
 from inputland.app import SIDES, TEXTS, Status, banner, describe
@@ -237,11 +240,24 @@ class Hud:
         if errors:
             raise errors[0]
 
+    def open(self, window: Callable[[Gtk.Application], None]) -> None:
+        """From any thread: `window(app)` opens a window in the HUD's app (the settings window)."""
+        GLib.idle_add(window, self._app)
+
     def _publish(self, status: Status) -> None:
         GLib.idle_add(self._render, status)
 
     def _build(self, app: Gtk.Application) -> None:
         self._view = HudView(self._style)
+        wayland = Gdk.Display.get_default().__gtype__.name == "GdkWaylandDisplay"  # layer-shell asserts it
+        if LayerShell is None or not wayland or not LayerShell.is_supported():
+            # a plain window would take the focus, get tiled, and pass every click through: no way to move or close it
+            app.hold()  # no window: keep the app, so launching again still stops it
+            log.warning(
+                "no HUD: it needs gtk4-layer-shell and a compositor with layer-shell (not GNOME or X11); "
+                "inputland runs without it", extra={"notify": True},
+            )
+            return
         self._theme = install_theme(self._view.redraw)
 
         window = Gtk.ApplicationWindow(application=app)
@@ -257,8 +273,6 @@ class Hud:
 
         window.set_child(self._view.widget)
         window.present()
-        if not LayerShell.is_supported():
-            log.warning("no layer-shell support in the compositor; the HUD is a normal window", extra={"notify": True})
 
     def _render(self, status: Status | None) -> None:
         self._view.render(status)

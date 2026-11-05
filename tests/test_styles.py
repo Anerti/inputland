@@ -16,6 +16,7 @@ STATUSES = [  # every state, a hold, both banner kinds, head mode
     Status(None, (("Right", "None"),), owner="Right", holding=("Right", "Close"), progress=0.6),
     Status(None, (), paused=True),
     Status(None, (), paused=True, quitting=True, progress=0.5),
+    Status(None, (("Left", "None"), ("Right", "None")), opening=True, progress=0.5),
     Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right", owner="Right"),
     Status(None, (("Right", "None"),), head=True, owner="Right"),
 ]

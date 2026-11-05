@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 import threading
 import time
 from collections import deque
@@ -13,7 +14,8 @@ from inputland.camera import Camera
 from inputland.config import Settings
 from inputland.filters import OneEuroFilter
 from inputland.gestures import (
-    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, pick_pointer_hand, pinch_ratio, touches_head,
+    Debounce, find_grabber, is_gesture, is_love_sign, is_pinching, is_triangle, pick_pointer_hand, pinch_ratio,
+    touches_head,
 )
 from inputland.pointer import VirtualPointer
 from inputland.tracking import (
@@ -36,9 +38,9 @@ HEAD = "Head"
 TEXTS = (
     STARTING, IDLE, ABSENT, IGNORED, READY, "Pointing", "Moving", "At edge", "Pinch", "Right click", "Copy", "Paste",
     "Close", "Paste...", "Close...", "Head...", "Head off...", "Scrolling", "Zooming", "Slider", "Volume", "Brightness",
-    "Paused", "Quit...", HEAD,
+    "Paused", "Quit...", "Settings...", HEAD,
 )
-BANNERS = (STARTING, IDLE, "Paused", "Quit...")
+BANNERS = (STARTING, IDLE, "Paused", "Quit...", "Settings...")
 
 
 @dataclass(frozen=True)
@@ -46,8 +48,8 @@ class Status:
     """What the loop sees, for the HUD.
 
     `owner` is the hand whose gestures count (the driver, else the last one); `holding` is (side, action) for a hold
-    building up before it acts; `quitting` is the both-fists hold building up; `progress` (0..1) is how far the hold
-    the HUD shows is.
+    building up before it acts; `quitting` is the both-fists hold building up, `opening` the triangle's (settings
+    window); `progress` (0..1) is how far the hold the HUD shows is.
     """
 
     driver: str | None
@@ -63,6 +65,7 @@ class Status:
     owner: str | None = None
     holding: tuple[str, str] | None = None
     quitting: bool = False
+    opening: bool = False
     progress: float = 0.0
 
 
@@ -72,6 +75,8 @@ def describe(side: str, status: Status | None) -> tuple[str, str]:
         return STARTING, "absent"
     if status.quitting:
         return "Quit...", "seen"
+    if status.opening:
+        return "Settings...", "seen"
     if status.paused:
         return "Paused", "paused"
     if status.action and side == status.action[0]:
@@ -109,8 +114,12 @@ def run(
     settings: Settings,
     on_status: Callable[[Status], None] = lambda status: None,
     stop: threading.Event | None = None,
+    on_settings: Callable[[], None] | None = None,
 ) -> None:
-    """Main loop. Reports `on_status` whenever it changes; exits when `stop` is set."""
+    """Main loop. Reports `on_status` whenever it changes; exits when `stop` is set. A triangle held with both hands
+    calls `on_settings`, if given."""
+    if settings.preview:  # OpenCV's wheel bundles Qt with only the xcb plugin: QT_QPA_PLATFORM=wayland aborts it
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
     model, face_model = ensure_model(MODEL_URL, MODEL_SHA256), ensure_model(FACE_MODEL_URL, FACE_MODEL_SHA256)
     with (
         Camera(settings.camera, settings.width, settings.height) as camera,
@@ -133,6 +142,7 @@ def run(
         wake = {side: Debounce(settings.engage_frames, settings.release_frames) for side in OTHER_SIDE}
         quitting = Debounce(settings.quit_frames, settings.release_frames)
         head_touch = Debounce(settings.head_touch_frames, settings.release_frames)
+        triangle = Debounce(settings.triangle_frames, settings.release_frames)
         head_x = OneEuroFilter(settings.min_cutoff, settings.beta)
         head_y = OneEuroFilter(settings.min_cutoff, settings.beta)
         log.info(
@@ -143,7 +153,8 @@ def run(
             "swipe one open palm left or right to switch workspace; "
             "hold one palm open and pinch with the other hand, then move it up / down for volume or sideways for "
             "brightness; make a fist to pause, open a palm to resume, hold both fists to quit; "
-            "hold an index finger on your forehead to steer the cursor with your head, again to stop"
+            "hold an index finger on your forehead to steer the cursor with your head, again to stop; "
+            "hold a triangle (thumb tips and index tips together, other fingers curled) for the settings"
         )
         driver: str | None = None
         last_driver: str | None = None
@@ -257,6 +268,9 @@ def run(
             if _started(love, any(is_love_sign(h) and not is_pinching(h, settings.pinch_ratio) for h in owned)):
                 log.debug("close window")
                 pointer.close_window()
+            if _started(triangle, on_settings is not None and is_triangle(hands, settings.pinch_ratio)):
+                log.info("triangle held: settings window")
+                on_settings()
 
             mover = next(iter(owned), None)
             both_palms = (
@@ -319,6 +333,8 @@ def run(
             filling = hold[0] if holding else None
             if toucher and head_touch.pending(settings.engage_frames):
                 holding, filling = (toucher, "Head off" if head else "Head"), head_touch
+            if triangle.pending(settings.engage_frames):
+                filling = triangle
             if quitting.pending(settings.engage_frames):
                 filling = quitting
             status = Status(
@@ -327,7 +343,7 @@ def run(
                 scrolling=owner if palms.state and palm_axis != "zoom" else None,
                 zooming=owner if palms.state and palm_axis == "zoom" else None, paused=paused, head=head,
                 adjusting=(slide_side, (slide_axis or "slider").capitalize()) if slider.state else None,
-                owner=owner, holding=holding, quitting=filling is quitting,
+                owner=owner, holding=holding, quitting=filling is quitting, opening=filling is triangle,
                 progress=filling.progress() if filling else 0.0,
             )
             if status != last_status:

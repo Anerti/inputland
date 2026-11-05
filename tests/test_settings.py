@@ -4,10 +4,10 @@ from inputland import cli
 
 try:
     from inputland import settings
-except (ImportError, RuntimeError, ValueError):  # same as tests/test_hud.py: needs GTK 4 and gtk4-layer-shell
+except (ImportError, RuntimeError, ValueError):  # same as tests/test_hud.py: needs GTK 4
     settings = None
 
-needs_gtk = pytest.mark.skipif(settings is None, reason="needs GTK 4 and gtk4-layer-shell")
+needs_gtk = pytest.mark.skipif(settings is None, reason="needs GTK 4")
 
 
 @needs_gtk

@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import tomllib
 from pathlib import Path
 
@@ -148,26 +149,31 @@ def main() -> None:
             from inputland.settings import ask
 
             chosen = ask(build_parser(config), vars(args))
-            if chosen is None:
-                return
-            save_config(build_parser(config), chosen, config)
-            sys.stdout.flush()  # buffered output is lost at exec
-            sys.stderr.flush()
-            # a new process frees the HUD's unique-app name and keeps OpenCV's preview out of GTK
-            # -P: keep the working directory (often ~ under systemd-run) off sys.path
-            argv = [sys.executable, "-P", "-m", "inputland", *(["--preview"] if chosen["preview"] else [])]
-            os.execv(sys.executable, argv)
+            if chosen is not None:
+                restart(config, chosen)
             return
         settings = settings_from(args)
-        if not args.hud or args.preview:
-            run(settings)
-        elif not display:
-            logging.info("no display (TTY?): running without the HUD")
-            run(settings)
-        else:
+        if args.hud and not args.preview and display:
             from inputland.hud import Hud
 
-            Hud(args.hud_corner, args.hud_style).run(lambda on_status, stop: run(settings, on_status, stop))
+            hud = Hud(args.hud_corner, args.hud_style)
+            windows: list = []  # the settings windows the triangle opened, beside the HUD
+
+            def open_settings(app: object) -> None:  # in GTK's thread
+                from inputland.settings import show
+
+                show(app, build_parser(config), vars(args), windows)
+
+            hud.run(lambda on_status, stop: run(settings, on_status, stop, lambda: hud.open(open_settings)))
+            if windows and windows[-1].result is not None:
+                restart(config, windows[-1].result)
+        else:
+            if args.hud and not args.preview:
+                logging.info("no display (TTY?): running without the HUD")
+            triangle = threading.Event()  # no HUD to open the settings window beside: stop and start over in it
+            run(settings, stop=triangle, on_settings=triangle.set if display else None)
+            if triangle.is_set():
+                _exec(*sys.argv[1:], "--settings")
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError, ValueError) as e:
@@ -175,6 +181,21 @@ def main() -> None:
         if unseen:
             notify("inputland stopped", str(e))
         sys.exit(1)
+
+
+def restart(config: Path, chosen: dict[str, object]) -> None:
+    """Save what the settings window `chosen` and start over with it."""
+    save_config(build_parser(config), chosen, config)
+    _exec(*(["--preview"] if chosen["preview"] else []))
+
+
+def _exec(*args: str) -> None:
+    """Become `python -m inputland args`: a new process frees the HUD's unique-app name and keeps OpenCV's preview
+    out of GTK."""
+    sys.stdout.flush()  # buffered output is lost at exec
+    sys.stderr.flush()
+    # -P: keep the working directory (often ~ under systemd-run) off sys.path
+    os.execv(sys.executable, [sys.executable, "-P", "-m", "inputland", *args])
 
 
 def notify(summary: str, body: str) -> None:

@@ -230,7 +230,7 @@ def draw(ctx: cairo.Context, style: str, status: Status | None, colors: Colors) 
     if shared:
         text, state = shared
         label = "INPUTLAND" if style == "cyberpunk" else ""
-        progress = status.progress if status and status.quitting else 0.0
+        progress = status.progress if status and text.endswith("...") else 0.0  # "...": a hold
         paint(ctx, 2, BANNER_W, label, text, state, progress, colors)
         return
     for side, x in zip(SIDES, (2, SECOND_X)):

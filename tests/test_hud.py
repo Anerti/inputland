@@ -64,6 +64,7 @@ def test_hud_marks_the_hand_whose_gestures_count_unless_it_drives():
         (Status(None, ()), ("Point to start", "absent")),
         (Status(None, (), paused=True), ("Paused", "paused")),
         (Status(None, (), paused=True, quitting=True), ("Quit...", "seen")),
+        (Status(None, (("Left", "None"), ("Right", "None")), opening=True), ("Settings...", "seen")),
         (Status("Right", ()), None),
         (Status(None, (), head=True), None),
         (Status(None, (("Left", "Open_Palm"), ("Right", "Open_Palm")), scrolling="Right"), None),
@@ -73,7 +74,7 @@ def test_hud_shows_what_concerns_both_hands_once(status, shown):
     assert banner(status) == shown
 
 
-@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+@pytest.mark.skipif(hud is None, reason="needs GTK 4")
 @pytest.mark.parametrize(
     ("theme", "active", "text"),
     [
@@ -92,7 +93,7 @@ def test_hud_highlight_is_the_theme_accent_with_readable_text(tmp_path, monkeypa
     assert f"@define-color on_active {text};" in css
 
 
-@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+@pytest.mark.skipif(hud is None, reason="needs GTK 4")
 def test_settings_window_highlight_is_the_theme_accent_even_with_an_active_border(tmp_path, monkeypatch):
     colors = tmp_path / "omarchy/current/theme/colors.toml"
     colors.parent.mkdir(parents=True)
@@ -103,13 +104,13 @@ def test_settings_window_highlight_is_the_theme_accent_even_with_an_active_borde
     assert "@define-color on_accent #ffffff;" in css
 
 
-@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+@pytest.mark.skipif(hud is None, reason="needs GTK 4")
 def test_hud_without_omarchy_follows_the_gtk_theme(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert hud.theme_css() == hud.GTK_THEME_CSS
 
 
-@pytest.mark.skipif(hud is None, reason="needs GTK 4 and gtk4-layer-shell")
+@pytest.mark.skipif(hud is None, reason="needs GTK 4")
 def test_hud_notices_omarchy_swapping_in_each_new_theme(tmp_path, monkeypatch):
     current = tmp_path / "omarchy/current"
     (current / "theme").mkdir(parents=True)

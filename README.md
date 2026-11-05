@@ -27,6 +27,7 @@ Point with either index finger and the cursor follows the base of that finger, s
 | <img src="docs/gestures/palm-pinch.jpg" width="180" alt="Open palm and pinch"> | **One palm open, the other hand pinching**, like grabbing a slider: move the pinch up / down for volume, right / left for brightness, about one step per centimeter |
 | <img src="docs/gestures/fist.jpg" width="180" alt="Fist"> | **Fist** with either hand: pause. The hands are ignored, so you can gesture freely, until you open a palm. **Both fists** held about 2 seconds: quit |
 | <img src="docs/gestures/forehead.jpg" width="180" alt="Index on forehead"> | **Index fingertip on your forehead** for half a second: steer the cursor with your head (nose tip, starting at the screen center); again to go back to your hand |
+| <img src="docs/gestures/triangle.jpg" width="180" alt="Triangle"> | **Triangle** with both hands, thumb tips together and index tips together, other fingers curled, held about a second: open the settings window beside the HUD; your hand keeps the cursor, so you can use it. Start applies the values and restarts, closing it carries on. Without the HUD (`--preview`, `--no-hud`) it stops and opens the settings window instead |
 
 Right click, close, copy, paste, scroll and swipe count only from the hand that last pointed, and only within about 3 seconds of it pointing or gesturing, so a stray pose from the other hand, or a thumbs up on a video call, does nothing.
 Scroll and zoom: whichever starts first keeps the gesture until you close either hand. Volume and brightness: whichever direction steps first keeps it until you let go of the pinch. They tap the media keys, so your desktop's own bindings make the change and show it (Omarchy shows its OSD). A pinch that was already dragging stays a drag.
@@ -35,7 +36,7 @@ In head mode, pinch, right click and the other gestures still work with the hand
 
 ## HUD
 
-A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it. `--hud-style` changes its look, always in your theme colors:
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it. It needs a compositor with layer-shell (Hyprland, Sway, KDE Plasma, ...): on GNOME and X11 inputland runs without it, and `--preview` shows what it tracks. `--hud-style` changes its look, always in your theme colors:
 
 - `cyberpunk`: slanted neon-edged panels.
 - `sticker`: rounded, outlined labels.
@@ -50,7 +51,7 @@ A HUD in the top-right corner shows what each hand is doing, in your Omarchy the
 | `Right click` · `Copy` · `Paste` · `Close` | The action just sent |
 | `Scrolling` · `Zooming` | Two open palms |
 | `Slider` · `Volume` · `Brightness` | Palm plus pinch |
-| `Close...` · `Paste...` · `Head...` · `Head off...` | A hold building up, so you can let go in time; the segment fills as it does |
+| `Close...` · `Paste...` · `Head...` · `Head off...` · `Settings...` | A hold building up, so you can let go in time; the segment fills as it does |
 | `At edge` | The hand is outside the mapped region |
 | `Paused` · `Head` | Paused (tinted, across the HUD), or in head mode |
 | `Ready` | This hand's gestures count, in a pose that does nothing |
@@ -73,6 +74,13 @@ git clone https://github.com/Anerti/inputland.git ~/Projects/inputland && cd ~/P
 
 It needs [uv](https://docs.astral.sh/uv/) and asks for `sudo` only for the package and the permissions. With [gum](https://github.com/charmbracelet/gum) installed (it ships with Omarchy) it shows menus and progress spinners; without it, plain prompts. After the first setup, log out and back in so the group membership applies.
 
+On distributions other than Arch, install the packages `uv sync` builds PyGObject with, and the HUD's library, first:
+
+```sh
+sudo apt install gcc pkg-config python3-dev libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-4.0 gir1.2-gtk4layershell-1.0  # Debian, Ubuntu
+sudo dnf install gcc pkg-config python3-devel cairo-gobject-devel gobject-introspection-devel gtk4 gtk4-layer-shell          # Fedora
+```
+
 ## Usage
 
 ```sh
@@ -82,7 +90,7 @@ inputland --no-hud   # headless, e.g. on X11; without a display (TTY) the HUD is
 inputland --settings # settings window; Start saves to config.toml and starts
 ```
 
-The app launcher entry opens the settings window, the same as `inputland --settings`: every flag below, in three tabs (Look, Feel, Camera), with sliders, a corner picker, style previews and a tracking area you drag over the camera frame. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
+The app launcher entry opens the settings window, the same as `inputland --settings` (or hold a triangle while inputland runs): every flag below, in three tabs (Look, Feel, Camera), with sliders, a corner picker, style previews and a tracking area you drag over the camera frame. Start saves the values to `~/.config/inputland/config.toml` and starts inputland; closing the window starts nothing. Its camera preview option applies to that run only. Launching again while inputland runs stops it, with no window.
 
 Started without a terminal (from the app launcher, where it is listed as *inputland*, or a keybinding), it shows a fatal error, or a warning such as a missing GPU, as a desktop notification. Launching it again stops it, so the launcher entry or a keybinding toggles it (with the HUD; `--no-hud` runs stop with Ctrl+C or both fists). To toggle it from a Hyprland keybinding, e.g. `bind = SUPER ALT, H, exec, ~/.local/bin/inputland`.
 
