@@ -187,7 +187,8 @@ def _terminal(ctx: cairo.Context, x: float, w: float, label: str, text: str, sta
     body = [(start, y0), (x + w - 8, y0), (x + w, ym), (x + w - 8, y1), (start, y1)]
     if label:
         body.append((start + 8, ym))
-    tint, tint_alpha = {"driving": (c.active, 0.25), "owner": (c.fg, 0.14), "seen": (c.fg, 0.1),
+    # accent alphas keep the text at 3:1 or more on every Omarchy theme (a bright accent under a mid fg)
+    tint, tint_alpha = {"driving": (c.active, 0.15), "owner": (c.fg, 0.14), "seen": (c.fg, 0.1),
                         "paused": (c.fg, 0.12), "absent": (c.fg, 0.06)}[state]
     _poly(ctx, body)
     _rgba(ctx, c.bg, 0.92)
@@ -200,7 +201,7 @@ def _terminal(ctx: cairo.Context, x: float, w: float, label: str, text: str, sta
         _poly(ctx, body)
         ctx.clip()
         ctx.rectangle(start, y0, (x + w - start) * p, y1 - y0)
-        _rgba(ctx, c.active, 0.25)
+        _rgba(ctx, c.active, 0.12)
         ctx.fill()
         ctx.restore()
     if label:
