@@ -54,7 +54,7 @@ def test_only_log_records_marked_notify_reach_the_desktop(monkeypatch):
     assert sent == [["notify-send", "--app-name=inputland", "inputland", "GPU &lt;unavailable&gt;"]]
 
 
-@pytest.mark.parametrize("text", ['beta = "fast"', "speed = 3", "region = [0.3]", 'hud-corner = "middle"', "beta ="])
+@pytest.mark.parametrize("text", ['beta = "fast"', "speed = 3", "region = [0.3]", 'hud-corner = "middle"', 'hud-style = "neon"', "beta ="])
 def test_bad_config_file_exits_naming_it(config, monkeypatch, caplog, text):
     config.path.write_text(text)
     monkeypatch.setattr(sys, "argv", ["inputland"])
@@ -65,3 +65,17 @@ def test_bad_config_file_exits_naming_it(config, monkeypatch, caplog, text):
     assert exit.value.code == 1
     assert str(config.path) in caplog.text
     assert not config.runs
+
+
+def test_hud_style_reaches_the_hud(config, monkeypatch):
+    made = []
+    fake = SimpleNamespace(Hud=lambda corner, style: SimpleNamespace(run=lambda worker: made.append((corner, style))))
+    monkeypatch.setitem(sys.modules, "inputland.hud", fake)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: True)  # no notification handler
+    config.path.write_text('hud-style = "sticker"\n')
+    monkeypatch.setattr(sys, "argv", ["inputland", "--hud-corner", "top-left"])
+
+    cli.main()
+
+    assert made == [("top-left", "sticker")]

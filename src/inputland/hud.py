@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 import tomllib
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,11 +27,14 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 from gi.repository import Gtk4LayerShell as LayerShell
 
+from inputland import styles
 from inputland.app import SIDES, TEXTS, Status, banner, describe
 
 log = logging.getLogger(__name__)
 
 Worker = Callable[[Callable[[Status], None], threading.Event], None]
+
+APP_ID = "dev.inputland.Hud"
 
 NAME_CHARS = max(len(t) for t in TEXTS)
 
@@ -104,10 +108,84 @@ def theme_css() -> str:
     )
 
 
+def install_theme(on_change: Callable[[], None]) -> Gio.FileMonitor:
+    """Add the theme's CSS for the display and reload it, then call `on_change`, when Omarchy switches theme.
+    Keep the monitor referenced."""
+    css = Gtk.CssProvider()
+    css.load_from_string(theme_css() + CSS)
+    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def reload() -> None:
+        css.load_from_string(theme_css() + CSS)
+        on_change()
+
+    return watch_theme(reload)
+
+
+def theme_colors(widget: Gtk.Widget) -> styles.Colors:
+    """The four `@define-color`s as Cairo colors."""
+    context = widget.get_style_context()
+    found = []
+    for name in ("bg", "fg", "active", "on_active"):
+        # shortcut: Gtk.StyleContext.lookup_color is deprecated since GTK 4.10, still in GTK 4; replace when moving to GTK 5
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            _, rgba = context.lookup_color(name)
+        found.append((rgba.red, rgba.green, rgba.blue))
+    return styles.Colors(*found)
+
+
+class HudView:
+    """The overlay's content in one of the styles: no window or layer-shell, so a settings window can preview it."""
+
+    def __init__(self, style: str) -> None:
+        self._style = style
+        self._status: Status | None = None
+        if style == "default":
+            self._hands = Gtk.Box(spacing=2)
+            self._segments: dict[str, Gtk.Label] = {}
+            for side in SIDES:
+                label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3, css_classes=["segment"])  # padding sets width
+                self._hands.append(label)
+                self._segments[side] = label
+            self._banner = Gtk.Label()
+            self._stack = Gtk.Stack(css_classes=["hud"])  # as wide as the segments, so the banner never resizes it
+            self._stack.add_child(self._hands)
+            self._stack.add_child(self._banner)
+            self.widget: Gtk.Widget = self._stack
+        else:
+            area = Gtk.DrawingArea()
+            area.set_content_width(styles.SIZES[style][0])
+            area.set_content_height(styles.SIZES[style][1])
+            area.set_draw_func(lambda _, ctx, w, h: styles.draw(ctx, style, self._status, theme_colors(area)))
+            self.widget = area
+        self.render(None)
+
+    def render(self, status: Status | None) -> None:
+        self._status = status
+        if self._style != "default":
+            self.widget.queue_draw()
+            return
+        shared = banner(status)
+        self._stack.set_visible_child(self._banner if shared else self._hands)
+        if shared:
+            _show(self._banner, *shared, status)
+        else:
+            for side, label in self._segments.items():
+                text, state = describe(side, status)
+                _show(label, f"{side[0]}  {text}", state, status)
+
+    def redraw(self) -> None:
+        """The theme changed: drawn styles read the colors again on every draw."""
+        if self._style != "default":
+            self.widget.queue_draw()
+
+
 class Hud:
-    def __init__(self, corner: str) -> None:
+    def __init__(self, corner: str, style: str = "default") -> None:
         self._corner = corner
-        self._app = Gtk.Application(application_id="dev.inputland.Hud")
+        self._style = style
+        self._app = Gtk.Application(application_id=APP_ID)
 
     def run(self, worker: Worker) -> None:
         """Show the HUD and run `worker(publish, stop)` in a background thread.
@@ -153,10 +231,8 @@ class Hud:
         GLib.idle_add(self._render, status)
 
     def _build(self, app: Gtk.Application) -> None:
-        css = Gtk.CssProvider()
-        css.load_from_string(theme_css() + CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self._theme = watch_theme(lambda: css.load_from_string(theme_css() + CSS))
+        self._view = HudView(self._style)
+        self._theme = install_theme(self._view.redraw)
 
         window = Gtk.ApplicationWindow(application=app)
         LayerShell.init_for_window(window)
@@ -167,31 +243,13 @@ class Hud:
             LayerShell.set_margin(window, edge, 12)
         window.connect("realize", lambda w: w.get_surface().set_input_region(cairo.Region()))
 
-        self._hands = Gtk.Box(spacing=2)
-        self._segments: dict[str, Gtk.Label] = {}
-        for side in SIDES:
-            label = Gtk.Label(xalign=0, width_chars=NAME_CHARS + 3, css_classes=["segment"])  # padding sets width
-            self._hands.append(label)
-            self._segments[side] = label
-        self._banner = Gtk.Label()
-        self._stack = Gtk.Stack(css_classes=["hud"])  # as wide as the segments, so the banner never resizes it
-        self._stack.add_child(self._hands)
-        self._stack.add_child(self._banner)
-        self._render(None)
-        window.set_child(self._stack)
+        window.set_child(self._view.widget)
         window.present()
         if not LayerShell.is_supported():
             log.warning("no layer-shell support in the compositor; the HUD is a normal window", extra={"notify": True})
 
     def _render(self, status: Status | None) -> None:
-        shared = banner(status)
-        self._stack.set_visible_child(self._banner if shared else self._hands)
-        if shared:
-            _show(self._banner, *shared, status)
-        else:
-            for side, label in self._segments.items():
-                text, state = describe(side, status)
-                _show(label, f"{side[0]}  {text}", state, status)
+        self._view.render(status)
 
 
 def _show(label: Gtk.Label, text: str, state: str, status: Status | None) -> None:

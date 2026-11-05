@@ -35,7 +35,11 @@ In head mode, pinch, right click and the other gestures still work with the hand
 
 ## HUD
 
-A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it.
+A HUD in the top-right corner shows what each hand is doing, in your Omarchy theme colors (following a theme switch), or your GTK theme's elsewhere. Clicks pass through it. `--hud-style` changes its look, always in your theme colors:
+
+- `cyberpunk`: slanted neon-edged panels.
+- `sticker`: rounded, outlined labels.
+- `terminal`: a one-line prompt-style bar.
 
 | Label | Meaning |
 | ----- | ------- |
@@ -96,6 +100,7 @@ Started without a terminal (from the app launcher, where it is listed as *inputl
 | `--head-range` | `0.12` | In head mode: nose travel (fraction of the frame) that crosses the whole screen; half of it from where head mode started reaches an edge. Lower = smaller head movements, more jitter. |
 | `--camera N` | `0` | Use `/dev/videoN`. |
 | `--hud-corner` | `top-right` | Screen corner of the HUD: `top-left`, `bottom-right`, `bottom-left`. |
+| `--hud-style` | `default` | Look of the HUD: `cyberpunk`, `sticker`, `terminal`. Colors always follow your theme. |
 
 Tune with `--preview`: hold your hand still and lower `--min-cutoff` until the jitter is gone, then move fast and raise `--beta` until the lag is gone.
 To keep your values, set the flags in `~/.config/inputland/config.toml`, named without the `--`; flags on the command line still win, and `--hud`, `--no-preview` and `--no-verbose` undo a `true`:

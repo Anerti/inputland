@@ -10,6 +10,7 @@ from pathlib import Path
 
 from inputland.app import run
 from inputland.config import Region, Settings
+from inputland.styles import STYLES
 
 
 def main() -> None:
@@ -69,6 +70,9 @@ def main() -> None:
         "--hud-corner", choices=("top-right", "top-left", "bottom-right", "bottom-left"), default="top-right",
         help="screen corner of the overlay",
     )
+    parser.add_argument(
+        "--hud-style", choices=STYLES, default="default", help="look of the overlay; colors always follow the theme",
+    )
     parser.add_argument("-v", "--verbose", action=argparse.BooleanOptionalAction, default=False, help="debug logging")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     display = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
@@ -103,7 +107,7 @@ def main() -> None:
         else:
             from inputland.hud import Hud
 
-            Hud(args.hud_corner).run(lambda on_status, stop: run(settings, on_status, stop))
+            Hud(args.hud_corner, args.hud_style).run(lambda on_status, stop: run(settings, on_status, stop))
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError, ValueError) as e:
