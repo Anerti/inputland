@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" width="480" alt="inputland logo"></p>
+
 # inputland
 
 Control the mouse with hand gestures from a webcam: point to move, pinch to click, open your palms to scroll. Works on Wayland (Hyprland), X11 and the TTY.
