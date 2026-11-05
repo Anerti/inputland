@@ -67,10 +67,10 @@ def spin(value: float, digits: int, step: float, upper: float = MAX_VALUE) -> Gt
 def number_input(action: argparse.Action, value: object) -> Input:
     if action.type is int:
         widget = spin(float(value), 0, 1)
-        return widget, widget.get_value_as_int, lambda v: widget.set_value(v)
+        return widget, widget.get_value_as_int, widget.set_value
     default = action.default or 1
     widget = spin(float(value), 3, 10 ** math.floor(math.log10(default)) / 10)
-    return widget, lambda: round(widget.get_value(), 3), lambda v: widget.set_value(v)
+    return widget, lambda: round(widget.get_value(), 3), widget.set_value
 
 
 def region_input(value: object) -> Input:
@@ -138,7 +138,7 @@ class _Window:
         self._show_preview()
         self._inputs["hud_style"][0].connect("notify::selected", lambda *_: self._show_preview())
 
-        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], visible=False, hexpand=True)
+        self._error = Gtk.Label(wrap=True, xalign=0, css_classes=["error"], hexpand=True)  # empty, not hidden: it keeps Start at the right
         reset = Gtk.Button(label="Reset to defaults")
         reset.connect("clicked", lambda _: self._reset())
         start = Gtk.Button(label="Start", css_classes=["suggested-action"])
@@ -162,7 +162,7 @@ class _Window:
         self.window.add_controller(keys)
 
     def _row(self, action: argparse.Action) -> Gtk.Widget:
-        widget, get, set_ = make_input(action, self._values[action.dest])
+        widget, get, set_ = make_input(action, self._initial(action.dest, self._values[action.dest]))
         self._inputs[action.dest] = (widget, get, set_)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
         text.append(Gtk.Label(label=label_for(action), xalign=0))
@@ -173,6 +173,11 @@ class _Window:
         widget.set_valign(Gtk.Align.CENTER)
         row.append(widget)
         return row
+
+    @staticmethod
+    def _initial(dest: str, value: object) -> object:
+        """What an input shows when the window opens or resets: preview always starts off (it applies to one run)."""
+        return False if dest == "preview" else value
 
     def _show_preview(self) -> None:
         child = self._preview.get_first_child()
@@ -185,8 +190,8 @@ class _Window:
 
     def _reset(self) -> None:
         for dest, (_, _, set_) in self._inputs.items():
-            set_(False if dest == "preview" else self._parser.get_default(dest))
-        self._error.set_visible(False)
+            set_(self._initial(dest, self._parser.get_default(dest)))
+        self._error.set_label("")
 
     def _start(self) -> None:
         edited = {**self._values, **{dest: get() for dest, (_, get, _) in self._inputs.items()}}
@@ -194,7 +199,6 @@ class _Window:
             cli.settings_from(argparse.Namespace(**edited))
         except ValueError as e:
             self._error.set_label(str(e))
-            self._error.set_visible(True)
             return
         self.result = edited
         self._app.quit()
